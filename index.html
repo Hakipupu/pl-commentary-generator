@@ -291,9 +291,10 @@ function extractValues(lines) {
     cogsBudget:    tok(lines, 4, ['Total COS']),
 
     // Payroll % — token positions: 2=Actual%, 4=Budget%, 8=LY%
-    payrollAct:    tok(lines, 2, ['Total Payroll', 'Related']),
-    payrollBudget: tok(lines, 4, ['Total Payroll', 'Related']),
-    payrollLY:     tok(lines, 8, ['Total Payroll', 'Related']),
+    // Must match "Total Payroll & Related Expenses" (ln33), NOT "Total Payroll Related Expenses" (ln32)
+    payrollAct:    tok(lines, 2, ['Total Payroll & Related']),
+    payrollBudget: tok(lines, 4, ['Total Payroll & Related']),
+    payrollLY:     tok(lines, 8, ['Total Payroll & Related']),
 
     // Dept GOP — token positions: 1=Actual$, 2=Actual%, 4=Budget%, 8=LY%
     gopDollar:     tok(lines, 1, ['Departmental Profit']),
@@ -337,9 +338,17 @@ function pct(a, b) { return (a !== null && b !== null && b !== 0) ? (a - b) / b 
 function pts(a, b) { return (a !== null && b !== null) ? a - b : null; }
 
 // ── Rendering ──────────────────────────────────────────────────────────────
+function trunc1(n) { return Math.trunc(n * 10) / 10; }   // truncate to 1 decimal
+function trunc2(n) { return Math.trunc(n * 100) / 100; } // truncate to 2 decimals
+
 function fmtK(n) {
   if (n === null || isNaN(n)) return '—';
-  return Math.abs(n) >= 1000 ? '$' + (n / 1000).toFixed(1) + 'K' : '$' + n.toFixed(0);
+  if (Math.abs(n) >= 1000) {
+    // floor toward zero to 1 decimal (so 23,356 → $23.3K, not $23.4K)
+    const k = Math.trunc(n / 100) / 10;
+    return '$' + k.toFixed(1) + 'K';
+  }
+  return '$' + n.toFixed(0);
 }
 function fmtPct(n) { return (n !== null && !isNaN(n)) ? n.toFixed(2) + '%' : '—'; }
 
@@ -348,7 +357,17 @@ function badge(n, isPts) {
   const sign  = n >= 0 ? '+' : '';
   const cls   = n >= 0 ? 'pos' : 'neg';
   const arrow = n >= 0 ? '▲' : '▼';
-  const label = isPts ? sign + n.toFixed(2) + ' pts' : sign + n.toFixed(1) + '%';
+  let label;
+  if (isPts) {
+    // pts: truncate to 2 decimals, strip trailing zero (e.g. -4.90 → -4.9)
+    const t = trunc2(n);
+    label = sign + parseFloat(t.toFixed(2)) + ' pts';
+  } else {
+    // %: if |n| >= 1 truncate to 1 decimal, else truncate to 2 decimals
+    const t = Math.abs(n) >= 1 ? trunc1(n) : trunc2(n);
+    const decimals = Math.abs(n) >= 1 ? 1 : 2;
+    label = sign + t.toFixed(decimals) + '%';
+  }
   return '<span class="badge ' + cls + '">' + arrow + ' ' + label + '</span>';
 }
 
@@ -381,30 +400,42 @@ function renderReport(v, filename) {
   set('narrative-text', buildNarrative(v));
 }
 
+function fmtPctVar(n) {
+  if (n === null || isNaN(n)) return null;
+  const sign = n >= 0 ? '+' : '';
+  const t = Math.abs(n) >= 1 ? trunc1(n) : trunc2(n);
+  const dec = Math.abs(n) >= 1 ? 1 : 2;
+  return sign + t.toFixed(dec) + '%';
+}
+function fmtPtsVar(n) {
+  if (n === null || isNaN(n)) return null;
+  return parseFloat(trunc2(n).toFixed(2)) + ' pts';
+}
+
 function buildNarrative(v) {
   const parts = [];
   if (v.memberAct !== null) {
-    const b  = v.memberVsBud !== null ? (v.memberVsBud >= 0 ? '+' : '') + v.memberVsBud.toFixed(1) + '% vs Budget' : '';
-    const ly = v.memberVsLY  !== null ? (v.memberVsLY  >= 0 ? '+' : '') + v.memberVsLY.toFixed(1)  + '% vs LY'     : '';
+    const b  = v.memberVsBud !== null ? fmtPctVar(v.memberVsBud) + ' vs Budget' : '';
+    const ly = v.memberVsLY  !== null ? fmtPctVar(v.memberVsLY)  + ' vs LY'     : '';
     parts.push('Member Revenue of ' + fmtK(v.memberAct) + ' was ' + [b, ly].filter(Boolean).join(' and ') + '.');
   }
   if (v.fbAct !== null) {
-    const b  = v.fbVsBud !== null ? (v.fbVsBud >= 0 ? '+' : '') + v.fbVsBud.toFixed(1) + '% vs Budget' : '';
-    const ly = v.fbVsLY  !== null ? (v.fbVsLY  >= 0 ? '+' : '') + v.fbVsLY.toFixed(1)  + '% vs LY'     : '';
+    const b  = v.fbVsBud !== null ? fmtPctVar(v.fbVsBud) + ' vs Budget' : '';
+    const ly = v.fbVsLY  !== null ? fmtPctVar(v.fbVsLY)  + ' vs LY'     : '';
     parts.push('F&amp;B Revenue of ' + fmtK(v.fbAct) + ' was ' + [b, ly].filter(Boolean).join(' and ') + '.');
   }
   if (v.cogsAct !== null && v.cogsVsBud !== null) {
     const dir = v.cogsVsBud > 0 ? 'above' : 'below';
-    parts.push('F&amp;B COGs at ' + fmtPct(v.cogsAct) + ' were ' + Math.abs(v.cogsVsBud).toFixed(2) + ' pts ' + dir + ' Budget (' + fmtPct(v.cogsBudget) + ').');
+    parts.push('F&amp;B COGs at ' + fmtPct(v.cogsAct) + ' were ' + Math.abs(trunc2(v.cogsVsBud)).toFixed(2) + ' pts ' + dir + ' Budget (' + fmtPct(v.cogsBudget) + ').');
   }
   if (v.payrollAct !== null) {
-    const b  = v.payrollVsBud !== null ? Math.abs(v.payrollVsBud).toFixed(2) + ' pts ' + (v.payrollVsBud > 0 ? 'above' : 'below') + ' Budget' : '';
-    const ly = v.payrollVsLY  !== null ? Math.abs(v.payrollVsLY).toFixed(2)  + ' pts ' + (v.payrollVsLY  > 0 ? 'above' : 'below') + ' LY'     : '';
+    const b  = v.payrollVsBud !== null ? Math.abs(parseFloat(trunc2(v.payrollVsBud).toFixed(2))) + ' pts ' + (v.payrollVsBud > 0 ? 'above' : 'below') + ' Budget' : '';
+    const ly = v.payrollVsLY  !== null ? Math.abs(parseFloat(trunc2(v.payrollVsLY).toFixed(2)))  + ' pts ' + (v.payrollVsLY  > 0 ? 'above' : 'below') + ' LY'     : '';
     parts.push('Payroll at ' + fmtPct(v.payrollAct) + ' was ' + [b, ly].filter(Boolean).join(' and ') + '.');
   }
   if (v.gopDollar !== null) {
-    const b  = v.gopVsBud !== null ? Math.abs(v.gopVsBud).toFixed(2) + ' pts ' + (v.gopVsBud > 0 ? 'above' : 'below') + ' Budget' : '';
-    const ly = v.gopVsLY  !== null ? Math.abs(v.gopVsLY).toFixed(2)  + ' pts ' + (v.gopVsLY  > 0 ? 'above' : 'below') + ' LY'     : '';
+    const b  = v.gopVsBud !== null ? Math.abs(parseFloat(trunc2(v.gopVsBud).toFixed(2))) + ' pts ' + (v.gopVsBud > 0 ? 'above' : 'below') + ' Budget' : '';
+    const ly = v.gopVsLY  !== null ? Math.abs(parseFloat(trunc2(v.gopVsLY).toFixed(2)))  + ' pts ' + (v.gopVsLY  > 0 ? 'above' : 'below') + ' LY'     : '';
     parts.push('Dept GOP of ' + fmtK(v.gopDollar) + ' (' + fmtPct(v.gopPctAct) + ' margin) was ' + [b, ly].filter(Boolean).join(' and ') + '.');
   }
   return parts.join('&nbsp;&nbsp;');
