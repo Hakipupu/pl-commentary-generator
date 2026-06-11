@@ -34,7 +34,6 @@
     #status.success { color: #1a7a4a; }
 
     #report { display: none; margin-top: 32px; }
-
     .report-header {
       background: #1a3a5c; color: #fff;
       padding: 16px 22px;
@@ -220,83 +219,87 @@ async function processFile(file) {
   }
 }
 
+// ── Build text lines from PDF items ───────────────────────────────────────
+// Group by y-coordinate, sort left-to-right, join with spaces.
 function buildTextLines(items) {
   const buckets = {};
   for (const item of items) {
     if (!item.str) continue;
     const y = Math.round(item.transform[5] / 3) * 3;
     if (!buckets[y]) buckets[y] = [];
-    buckets[y].push({ x: item.transform[4], text: item.str, width: item.width || 0 });
+    buckets[y].push({ x: item.transform[4], text: item.str });
   }
-
   const sortedY = Object.keys(buckets).map(Number).sort((a, b) => b - a);
-  const rows = sortedY.map(y => buckets[y].sort((a, b) => a.x - b.x));
+  return sortedY.map(y =>
+    buckets[y].sort((a, b) => a.x - b.x).map(it => it.text).join(' ')
+  );
+}
 
-  let wSum = 0, cSum = 0;
-  for (const row of rows) {
-    for (const it of row) {
-      const t = it.text.trim();
-      if (t.length > 0 && it.width > 0) { wSum += it.width; cSum += t.length; }
-    }
+// ── Find line containing ALL given keywords ────────────────────────────────
+function findLine(lines, keywords) {
+  return lines.find(line =>
+    keywords.every(kw => line.toLowerCase().includes(kw.toLowerCase()))
+  ) || null;
+}
+
+// ── Extract all numeric tokens from a line ────────────────────────────────
+// Layout: [Actual$] [Actual%] [Budget$] [Budget%] [PriorMonth$] [PriorMonth%] [LY$] [LY%] [Description...]
+// Standalone "-" (zero placeholder) becomes "0".
+function getDataTokens(line) {
+  if (!line) return [];
+  const tokens = [];
+  for (const part of line.trim().split(/\s+/)) {
+    if (/^\([\d,]+\.?\d*\)$/.test(part)) { tokens.push(part); }         // (negative)
+    else if (/^-?[\d,]+\.?\d*$/.test(part)) { tokens.push(part); }      // number
+    else if (part === '-') { tokens.push('0'); }                          // zero dash
   }
-  const charW = cSum > 0 ? wSum / cSum : 6.0;
-
-  return rows.map(row => {
-    if (!row.length) return '';
-    const baseX = row[0].x;
-    let str = '';
-    for (const it of row) {
-      const col = Math.max(0, Math.round((it.x - baseX) / charW));
-      while (str.length < col) str += ' ';
-      str += it.text;
-    }
-    return str;
-  });
+  return tokens;
 }
 
-function getToken(lines, lineNum, colNum) {
-  const line = lines[lineNum - 1];
-  if (!line) return null;
-  const idx = colNum - 1;
-  if (idx >= line.length) return null;
-  let start = idx;
-  while (start > 0 && isNumCh(line[start - 1])) start--;
-  let end = idx;
-  while (end < line.length - 1 && isNumCh(line[end + 1])) end++;
-  const tok = line.slice(start, end + 1).replace(/\s/g, '');
-  return tok || null;
+// Get 1-based token index from the line matching the given keywords.
+function tok(lines, idx, keywords) {
+  const tokens = getDataTokens(findLine(lines, keywords));
+  return tokens[idx - 1] !== undefined ? tokens[idx - 1] : null;
 }
-
-function isNumCh(c) { return /[\d,.()-]/.test(c); }
 
 function parseNum(raw) {
-  if (!raw) return null;
+  if (raw === null || raw === undefined) return null;
   const s   = String(raw).replace(/[$,%\s]/g, '');
   const neg = s.startsWith('(') && s.endsWith(')');
   const n   = parseFloat(s.replace(/[()]/g, '').replace(/,/g, ''));
   return isNaN(n) ? null : (neg ? -n : n);
 }
 
+// ── Extract all required values ────────────────────────────────────────────
 function extractValues(lines) {
   const raw = {
-    memberAct:     getToken(lines, 5,  1),
-    memberBudget:  getToken(lines, 5,  17),
-    memberLY:      getToken(lines, 5,  49),
-    fbAct1:        getToken(lines, 7,  1),
-    fbAct2:        getToken(lines, 8,  1),
-    fbBud1:        getToken(lines, 7,  16),
-    fbBud2:        getToken(lines, 8,  18),
-    fbLY1:         getToken(lines, 7,  46),
-    fbLY2:         getToken(lines, 8,  40),
-    cogsAct:       getToken(lines, 12, 9),
-    cogsBudget:    getToken(lines, 12, 24),
-    payrollAct:    getToken(lines, 29, 9),
-    payrollBudget: getToken(lines, 29, 25),
-    payrollLY:     getToken(lines, 29, 55),
-    gopDollar:     getToken(lines, 46, 1),
-    gopPctAct:     getToken(lines, 46, 9),
-    gopPctBud:     getToken(lines, 46, 24),
-    gopPctLY:      getToken(lines, 46, 54),
+    // Member Revenue — token positions: 1=Actual, 3=Budget, 7=LY
+    memberAct:     tok(lines, 1, ['Members Club Revenue']),
+    memberBudget:  tok(lines, 3, ['Members Club Revenue']),
+    memberLY:      tok(lines, 7, ['Members Club Revenue']),
+
+    // F&B Revenue = Food & Beverage line + Other Revenue line
+    fbAct1:        tok(lines, 1, ['Food', 'Beverage Revenue']),
+    fbBud1:        tok(lines, 3, ['Food', 'Beverage Revenue']),
+    fbLY1:         tok(lines, 7, ['Food', 'Beverage Revenue']),
+    fbAct2:        tok(lines, 1, ['Other', 'Revenue', 'Room Rental']),
+    fbBud2:        tok(lines, 3, ['Other', 'Revenue', 'Room Rental']),
+    fbLY2:         tok(lines, 7, ['Other', 'Revenue', 'Room Rental']),
+
+    // F&B COGs % — token positions: 2=Actual%, 4=Budget%
+    cogsAct:       tok(lines, 2, ['Total COS']),
+    cogsBudget:    tok(lines, 4, ['Total COS']),
+
+    // Payroll % — token positions: 2=Actual%, 4=Budget%, 8=LY%
+    payrollAct:    tok(lines, 2, ['Total Payroll', 'Related']),
+    payrollBudget: tok(lines, 4, ['Total Payroll', 'Related']),
+    payrollLY:     tok(lines, 8, ['Total Payroll', 'Related']),
+
+    // Dept GOP — token positions: 1=Actual$, 2=Actual%, 4=Budget%, 8=LY%
+    gopDollar:     tok(lines, 1, ['Departmental Profit']),
+    gopPctAct:     tok(lines, 2, ['Departmental Profit']),
+    gopPctBud:     tok(lines, 4, ['Departmental Profit']),
+    gopPctLY:      tok(lines, 8, ['Departmental Profit']),
   };
 
   const v = {};
@@ -333,6 +336,7 @@ function extractValues(lines) {
 function pct(a, b) { return (a !== null && b !== null && b !== 0) ? (a - b) / b * 100 : null; }
 function pts(a, b) { return (a !== null && b !== null) ? a - b : null; }
 
+// ── Rendering ──────────────────────────────────────────────────────────────
 function fmtK(n) {
   if (n === null || isNaN(n)) return '—';
   return Math.abs(n) >= 1000 ? '$' + (n / 1000).toFixed(1) + 'K' : '$' + n.toFixed(0);
@@ -403,37 +407,37 @@ function buildNarrative(v) {
     const ly = v.gopVsLY  !== null ? Math.abs(v.gopVsLY).toFixed(2)  + ' pts ' + (v.gopVsLY  > 0 ? 'above' : 'below') + ' LY'     : '';
     parts.push('Dept GOP of ' + fmtK(v.gopDollar) + ' (' + fmtPct(v.gopPctAct) + ' margin) was ' + [b, ly].filter(Boolean).join(' and ') + '.');
   }
-  return parts.join('&nbsp; ');
+  return parts.join('&nbsp;&nbsp;');
 }
 
 function showRawData(lines, v) {
   const spec = [
-    ['Member Act   (ln5  col1)',  v.raw.memberAct],
-    ['Member Bud   (ln5  col17)', v.raw.memberBudget],
-    ['Member LY    (ln5  col49)', v.raw.memberLY],
-    ['FB Act1      (ln7  col1)',  v.raw.fbAct1],
-    ['FB Act2      (ln8  col1)',  v.raw.fbAct2],
-    ['FB Bud1      (ln7  col16)', v.raw.fbBud1],
-    ['FB Bud2      (ln8  col18)', v.raw.fbBud2],
-    ['FB LY1       (ln7  col46)', v.raw.fbLY1],
-    ['FB LY2       (ln8  col40)', v.raw.fbLY2],
-    ['COGs Act     (ln12 col9)',  v.raw.cogsAct],
-    ['COGs Bud     (ln12 col24)', v.raw.cogsBudget],
-    ['Payroll Act  (ln29 col9)',  v.raw.payrollAct],
-    ['Payroll Bud  (ln29 col25)', v.raw.payrollBudget],
-    ['Payroll LY   (ln29 col55)', v.raw.payrollLY],
-    ['GOP $        (ln46 col1)',  v.raw.gopDollar],
-    ['GOP % Act    (ln46 col9)',  v.raw.gopPctAct],
-    ['GOP % Bud    (ln46 col24)', v.raw.gopPctBud],
-    ['GOP % LY     (ln46 col54)', v.raw.gopPctLY],
+    ['Member Act   (Members Club Revenue tok1)', v.raw.memberAct],
+    ['Member Bud   (Members Club Revenue tok3)', v.raw.memberBudget],
+    ['Member LY    (Members Club Revenue tok7)', v.raw.memberLY],
+    ['FB Act1      (Food Beverage Revenue tok1)', v.raw.fbAct1],
+    ['FB Bud1      (Food Beverage Revenue tok3)', v.raw.fbBud1],
+    ['FB LY1       (Food Beverage Revenue tok7)', v.raw.fbLY1],
+    ['FB Act2      (Other Revenue Room tok1)',    v.raw.fbAct2],
+    ['FB Bud2      (Other Revenue Room tok3)',    v.raw.fbBud2],
+    ['FB LY2       (Other Revenue Room tok7)',    v.raw.fbLY2],
+    ['COGs Act     (Total COS tok2)',             v.raw.cogsAct],
+    ['COGs Bud     (Total COS tok4)',             v.raw.cogsBudget],
+    ['Payroll Act  (Total Payroll Related tok2)', v.raw.payrollAct],
+    ['Payroll Bud  (Total Payroll Related tok4)', v.raw.payrollBudget],
+    ['Payroll LY   (Total Payroll Related tok8)', v.raw.payrollLY],
+    ['GOP $        (Departmental Profit tok1)',   v.raw.gopDollar],
+    ['GOP % Act    (Departmental Profit tok2)',   v.raw.gopPctAct],
+    ['GOP % Bud    (Departmental Profit tok4)',   v.raw.gopPctBud],
+    ['GOP % LY     (Departmental Profit tok8)',   v.raw.gopPctLY],
   ];
 
-  let out = '=== Extracted cell values ===\n\n';
+  let out = '=== Extracted values ===\n\n';
   for (const [lbl, val] of spec)
-    out += lbl.padEnd(30) + (val != null ? val : '⚠ NOT FOUND') + '\n';
+    out += lbl.padEnd(44) + (val != null ? val : '⚠ NOT FOUND') + '\n';
 
-  out += '\n\n=== Reconstructed text lines (first 55) ===\n';
-  for (let i = 0; i < Math.min(lines.length, 55); i++)
+  out += '\n\n=== All text lines (first 60) ===\n';
+  for (let i = 0; i < Math.min(lines.length, 60); i++)
     out += 'ln' + String(i + 1).padStart(2) + ': ' + lines[i] + '\n';
 
   rawDataEl.textContent = out;
