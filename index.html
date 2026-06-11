@@ -34,31 +34,13 @@
     #status.success { color: #1a7a4a; }
 
     #report { display: none; margin-top: 32px; }
-    .report-header {
-      background: #1a3a5c; color: #fff;
-      padding: 16px 22px;
-      border-radius: 10px 10px 0 0;
-      display: flex; justify-content: space-between; align-items: center;
-    }
-    .report-header h2 { font-size: 1.05rem; font-weight: 600; }
-    .report-header .subtitle { font-size: 0.8rem; opacity: 0.7; }
 
-    .metrics-grid { background: #fff; border-radius: 0 0 10px 10px; overflow: hidden; box-shadow: 0 2px 12px rgba(0,0,0,0.08); }
-    .metric-row { display: grid; grid-template-columns: 180px 1fr 1fr 1fr; border-bottom: 1px solid #eaecf0; }
-    .metric-row:last-child { border-bottom: none; }
-    .metric-row.hdr { background: #f7f9fc; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; color: #6b7280; letter-spacing: 0.4px; }
-    .mc { padding: 13px 15px; border-right: 1px solid #eaecf0; display: flex; align-items: center; font-size: 0.88rem; }
-    .mc:last-child { border-right: none; }
-    .mc.lbl { font-weight: 600; color: #1a3a5c; }
-    .mc.val { font-weight: 700; font-size: 1rem; color: #111; }
-    .badge { display: inline-flex; align-items: center; gap: 3px; padding: 3px 9px; border-radius: 99px; font-size: 0.79rem; font-weight: 600; }
-    .pos { background: #dcfce7; color: #15803d; }
-    .neg { background: #fee2e2; color: #b91c1c; }
-    .neu { background: #f3f4f6; color: #374151; }
-
-    .narrative { background: #fff; border-radius: 10px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); padding: 20px 22px; margin-top: 20px; }
-    .narrative h3 { font-size: 0.9rem; font-weight: 700; color: #1a3a5c; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.4px; }
-    .narrative p  { font-size: 0.92rem; line-height: 1.65; color: #333; }
+    .report-card { background: #fff; border-radius: 10px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); overflow: hidden; }
+    .report-card-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 18px; border-bottom: 1px solid #eaecf0; font-size: 0.8rem; color: #888; }
+    #report-text { padding: 20px 22px; font-family: 'Segoe UI', Arial, sans-serif; font-size: 0.97rem; line-height: 1.9; color: #111; white-space: pre-wrap; word-break: break-word; background: #fff; border: none; outline: none; }
+    .copy-btn { background: #1a3a5c; color: #fff; border: none; border-radius: 6px; padding: 5px 14px; font-size: 0.8rem; cursor: pointer; }
+    .copy-btn:hover { background: #2a527d; }
+    .copy-btn.copied { background: #15803d; }
 
     .raw-section { margin-top: 18px; }
     .raw-toggle { background: none; border: 1px solid #c0cfe0; border-radius: 6px; padding: 5px 13px; font-size: 0.8rem; color: #555; cursor: pointer; }
@@ -93,55 +75,12 @@
   <div id="status"></div>
 
   <div id="report">
-    <div class="report-header">
-      <div>
-        <h2>P&amp;L Commentary</h2>
-        <div class="subtitle" id="rpt-subtitle"></div>
+    <div class="report-card">
+      <div class="report-card-header">
+        <span id="rpt-subtitle"></span>
+        <button class="copy-btn" id="copyBtn" onclick="copyReport()">Copy</button>
       </div>
-    </div>
-
-    <div class="metrics-grid">
-      <div class="metric-row hdr">
-        <div class="mc lbl">Metric</div>
-        <div class="mc">Actual</div>
-        <div class="mc">vs Budget</div>
-        <div class="mc">vs Last Year</div>
-      </div>
-      <div class="metric-row">
-        <div class="mc lbl">Member Revenue</div>
-        <div class="mc val" id="r-mem-act"></div>
-        <div class="mc"     id="r-mem-bud"></div>
-        <div class="mc"     id="r-mem-ly"></div>
-      </div>
-      <div class="metric-row">
-        <div class="mc lbl">F&amp;B Revenue</div>
-        <div class="mc val" id="r-fb-act"></div>
-        <div class="mc"     id="r-fb-bud"></div>
-        <div class="mc"     id="r-fb-ly"></div>
-      </div>
-      <div class="metric-row">
-        <div class="mc lbl">F&amp;B COGs %</div>
-        <div class="mc val" id="r-cogs-act"></div>
-        <div class="mc"     id="r-cogs-bud"></div>
-        <div class="mc neu" style="color:#9ca3af;font-size:0.82rem;">N/A</div>
-      </div>
-      <div class="metric-row">
-        <div class="mc lbl">Payroll %</div>
-        <div class="mc val" id="r-pay-act"></div>
-        <div class="mc"     id="r-pay-bud"></div>
-        <div class="mc"     id="r-pay-ly"></div>
-      </div>
-      <div class="metric-row">
-        <div class="mc lbl">Dept GOP</div>
-        <div class="mc val" id="r-gop-act"></div>
-        <div class="mc"     id="r-gop-bud"></div>
-        <div class="mc"     id="r-gop-ly"></div>
-      </div>
-    </div>
-
-    <div class="narrative">
-      <h3>Narrative Summary</h3>
-      <p id="narrative-text"></p>
+      <pre id="report-text"></pre>
     </div>
 
     <div class="raw-section">
@@ -371,74 +310,65 @@ function badge(n, isPts) {
   return '<span class="badge ' + cls + '">' + arrow + ' ' + label + '</span>';
 }
 
-function set(id, html) { const el = document.getElementById(id); if (el) el.innerHTML = html; }
-
 function renderReport(v, filename) {
   document.getElementById('rpt-subtitle').textContent =
-    'Source: ' + filename + '  ·  Generated ' +
-    new Date().toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' });
+    filename + '  ·  ' + new Date().toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' });
 
-  set('r-mem-act',  fmtK(v.memberAct));
-  set('r-mem-bud',  badge(v.memberVsBud, false));
-  set('r-mem-ly',   badge(v.memberVsLY,  false));
-  set('r-fb-act',   fmtK(v.fbAct));
-  set('r-fb-bud',   badge(v.fbVsBud,  false));
-  set('r-fb-ly',    badge(v.fbVsLY,   false));
-  set('r-cogs-act', fmtPct(v.cogsAct));
-  set('r-cogs-bud', badge(v.cogsVsBud, true));
-  set('r-pay-act',  fmtPct(v.payrollAct));
-  set('r-pay-bud',  badge(v.payrollVsBud, true));
-  set('r-pay-ly',   badge(v.payrollVsLY,  true));
-
-  const gopLabel = v.gopDollar !== null
-    ? fmtK(v.gopDollar) + ' <span style="font-weight:400;font-size:0.82rem;color:#555">(' + fmtPct(v.gopPctAct) + ' margin)</span>'
-    : '—';
-  set('r-gop-act',  gopLabel);
-  set('r-gop-bud',  badge(v.gopVsBud, true));
-  set('r-gop-ly',   badge(v.gopVsLY,  true));
-
-  set('narrative-text', buildNarrative(v));
+  document.getElementById('report-text').textContent = buildText(v);
 }
 
+function copyReport() {
+  const text = document.getElementById('report-text').textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    const btn = document.getElementById('copyBtn');
+    btn.textContent = 'Copied!';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2000);
+  });
+}
+
+// Format a % variance: +/-X.X% for |n|>=1, +/-X.XX% for |n|<1
 function fmtPctVar(n) {
-  if (n === null || isNaN(n)) return null;
+  if (n === null || isNaN(n)) return '—';
   const sign = n >= 0 ? '+' : '';
-  const t = Math.abs(n) >= 1 ? trunc1(n) : trunc2(n);
-  const dec = Math.abs(n) >= 1 ? 1 : 2;
+  const t    = Math.abs(n) >= 1 ? trunc1(n) : trunc2(n);
+  const dec  = Math.abs(n) >= 1 ? 1 : 2;
   return sign + t.toFixed(dec) + '%';
 }
+
+// Format a pts variance: +/-X.XX pts (trailing zeros stripped)
 function fmtPtsVar(n) {
-  if (n === null || isNaN(n)) return null;
-  return parseFloat(trunc2(n).toFixed(2)) + ' pts';
+  if (n === null || isNaN(n)) return '—';
+  const sign = n >= 0 ? '+' : '';
+  return sign + parseFloat(trunc2(n).toFixed(2)) + ' pts';
 }
 
-function buildNarrative(v) {
-  const parts = [];
+// Build the plain copyable text in the exact format:
+// Member Revenue $103K (−9.7% vs Budget, +1.9% vs LY)
+function buildText(v) {
+  const lines = [];
+
   if (v.memberAct !== null) {
-    const b  = v.memberVsBud !== null ? fmtPctVar(v.memberVsBud) + ' vs Budget' : '';
-    const ly = v.memberVsLY  !== null ? fmtPctVar(v.memberVsLY)  + ' vs LY'     : '';
-    parts.push('Member Revenue of ' + fmtK(v.memberAct) + ' was ' + [b, ly].filter(Boolean).join(' and ') + '.');
+    const parts = [fmtPctVar(v.memberVsBud) + ' vs Budget', fmtPctVar(v.memberVsLY) + ' vs LY'];
+    lines.push('Member Revenue ' + fmtK(v.memberAct) + ' (' + parts.join(', ') + ')');
   }
   if (v.fbAct !== null) {
-    const b  = v.fbVsBud !== null ? fmtPctVar(v.fbVsBud) + ' vs Budget' : '';
-    const ly = v.fbVsLY  !== null ? fmtPctVar(v.fbVsLY)  + ' vs LY'     : '';
-    parts.push('F&amp;B Revenue of ' + fmtK(v.fbAct) + ' was ' + [b, ly].filter(Boolean).join(' and ') + '.');
+    const parts = [fmtPctVar(v.fbVsBud) + ' vs Budget', fmtPctVar(v.fbVsLY) + ' vs LY'];
+    lines.push('F&B Revenue ' + fmtK(v.fbAct) + ' (' + parts.join(', ') + ')');
   }
-  if (v.cogsAct !== null && v.cogsVsBud !== null) {
-    const dir = v.cogsVsBud > 0 ? 'above' : 'below';
-    parts.push('F&amp;B COGs at ' + fmtPct(v.cogsAct) + ' were ' + Math.abs(trunc2(v.cogsVsBud)).toFixed(2) + ' pts ' + dir + ' Budget (' + fmtPct(v.cogsBudget) + ').');
+  if (v.cogsAct !== null) {
+    lines.push('F&B COGs: ' + fmtPct(v.cogsAct) + ' (' + fmtPtsVar(v.cogsVsBud) + ' vs Budget)');
   }
   if (v.payrollAct !== null) {
-    const b  = v.payrollVsBud !== null ? Math.abs(parseFloat(trunc2(v.payrollVsBud).toFixed(2))) + ' pts ' + (v.payrollVsBud > 0 ? 'above' : 'below') + ' Budget' : '';
-    const ly = v.payrollVsLY  !== null ? Math.abs(parseFloat(trunc2(v.payrollVsLY).toFixed(2)))  + ' pts ' + (v.payrollVsLY  > 0 ? 'above' : 'below') + ' LY'     : '';
-    parts.push('Payroll at ' + fmtPct(v.payrollAct) + ' was ' + [b, ly].filter(Boolean).join(' and ') + '.');
+    const parts = [fmtPtsVar(v.payrollVsBud) + ' vs Budget', fmtPtsVar(v.payrollVsLY) + ' vs LY'];
+    lines.push('Payroll %: ' + fmtPct(v.payrollAct) + ' (' + parts.join(', ') + ')');
   }
   if (v.gopDollar !== null) {
-    const b  = v.gopVsBud !== null ? Math.abs(parseFloat(trunc2(v.gopVsBud).toFixed(2))) + ' pts ' + (v.gopVsBud > 0 ? 'above' : 'below') + ' Budget' : '';
-    const ly = v.gopVsLY  !== null ? Math.abs(parseFloat(trunc2(v.gopVsLY).toFixed(2)))  + ' pts ' + (v.gopVsLY  > 0 ? 'above' : 'below') + ' LY'     : '';
-    parts.push('Dept GOP of ' + fmtK(v.gopDollar) + ' (' + fmtPct(v.gopPctAct) + ' margin) was ' + [b, ly].filter(Boolean).join(' and ') + '.');
+    const parts = [fmtPct(v.gopPctAct) + ' margin', fmtPtsVar(v.gopVsBud) + ' vs Budget', fmtPtsVar(v.gopVsLY) + ' vs LY'];
+    lines.push('Dept GOP: ' + fmtK(v.gopDollar) + ' (' + parts.join(', ') + ')');
   }
-  return parts.join('&nbsp;&nbsp;');
+
+  return lines.join('\n');
 }
 
 function showRawData(lines, v) {
