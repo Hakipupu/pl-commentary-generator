@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>P&L Commentary Generator</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f2f5; color: #222; min-height: 100vh; }
+    header { background: #1a3a5c; color: #fff; padding: 20px 32px; }
+    header h1 { font-size: 1.4rem; font-weight: 600; }
+    header p  { font-size: 0.85rem; opacity: 0.7; margin-top: 4px; }
+    .container { max-width: 900px; margin: 40px auto; padding: 0 16px; }
+
+    .upload-card {
+      background: #fff;
+      border: 2px dashed #c0cfe0;
+      border-radius: 12px;
+      padding: 52px 32px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      position: relative;
+    }
+    .upload-card:hover, .upload-card.drag-over { border-color: #2563eb; background: #f0f6ff; }
+    .upload-card input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+    .upload-icon { font-size: 3rem; margin-bottom: 12px; }
+    .upload-card p { color: #555; font-size: 0.95rem; }
+    .upload-card .hint { color: #999; font-size: 0.82rem; margin-top: 8px; }
+
+    #status { margin-top: 16px; font-size: 0.9rem; color: #555; min-height: 22px; text-align: center; }
+    #status.error   { color: #c0392b; }
+    #status.success { color: #1a7a4a; }
+
+    #report { display: none; margin-top: 32px; }
+
+    .report-header {
+      background: #1a3a5c; color: #fff;
+      padding: 16px 22px;
+      border-radius: 10px 10px 0 0;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .report-header h2 { font-size: 1.05rem; font-weight: 600; }
+    .report-header .subtitle { font-size: 0.8rem; opacity: 0.7; }
+
+    .metrics-grid { background: #fff; border-radius: 0 0 10px 10px; overflow: hidden; box-shadow: 0 2px 12px rgba(0,0,0,0.08); }
+    .metric-row { display: grid; grid-template-columns: 180px 1fr 1fr 1fr; border-bottom: 1px solid #eaecf0; }
+    .metric-row:last-child { border-bottom: none; }
+    .metric-row.hdr { background: #f7f9fc; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; color: #6b7280; letter-spacing: 0.4px; }
+    .mc { padding: 13px 15px; border-right: 1px solid #eaecf0; display: flex; align-items: center; font-size: 0.88rem; }
+    .mc:last-child { border-right: none; }
+    .mc.lbl { font-weight: 600; color: #1a3a5c; }
+    .mc.val { font-weight: 700; font-size: 1rem; color: #111; }
+    .badge { display: inline-flex; align-items: center; gap: 3px; padding: 3px 9px; border-radius: 99px; font-size: 0.79rem; font-weight: 600; }
+    .pos { background: #dcfce7; color: #15803d; }
+    .neg { background: #fee2e2; color: #b91c1c; }
+    .neu { background: #f3f4f6; color: #374151; }
+
+    .narrative { background: #fff; border-radius: 10px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); padding: 20px 22px; margin-top: 20px; }
+    .narrative h3 { font-size: 0.9rem; font-weight: 700; color: #1a3a5c; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.4px; }
+    .narrative p  { font-size: 0.92rem; line-height: 1.65; color: #333; }
+
+    .raw-section { margin-top: 18px; }
+    .raw-toggle { background: none; border: 1px solid #c0cfe0; border-radius: 6px; padding: 5px 13px; font-size: 0.8rem; color: #555; cursor: pointer; }
+    .raw-toggle:hover { background: #f0f2f5; }
+    #raw-data { display: none; background: #1e2433; color: #a8d8a8; font-family: monospace; font-size: 0.75rem; padding: 16px; border-radius: 8px; overflow-x: auto; white-space: pre; max-height: 340px; overflow-y: auto; margin-top: 10px; }
+
+    .reset-btn { margin-top: 20px; background: #1a3a5c; color: #fff; border: none; border-radius: 7px; padding: 10px 22px; font-size: 0.88rem; cursor: pointer; display: block; margin-left: auto; }
+    .reset-btn:hover { background: #2a527d; }
+
+    @media (max-width: 580px) {
+      .metric-row { grid-template-columns: 130px 1fr 1fr 1fr; }
+      .mc { padding: 9px 8px; font-size: 0.76rem; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>P&amp;L Commentary Generator</h1>
+  <p>Upload a P&amp;L PDF to instantly generate the department commentary report</p>
+</header>
+
+<div class="container">
+
+  <div class="upload-card" id="dropZone">
+    <input type="file" id="fileInput" accept=".pdf" />
+    <div class="upload-icon">&#128196;</div>
+    <p><strong>Click to upload</strong> or drag &amp; drop your P&amp;L PDF</p>
+    <p class="hint">PDF processed locally in your browser &mdash; nothing is uploaded to a server</p>
+  </div>
+
+  <div id="status"></div>
+
+  <div id="report">
+    <div class="report-header">
+      <div>
+        <h2>P&amp;L Commentary</h2>
+        <div class="subtitle" id="rpt-subtitle"></div>
+      </div>
+    </div>
+
+    <div class="metrics-grid">
+      <div class="metric-row hdr">
+        <div class="mc lbl">Metric</div>
+        <div class="mc">Actual</div>
+        <div class="mc">vs Budget</div>
+        <div class="mc">vs Last Year</div>
+      </div>
+      <div class="metric-row">
+        <div class="mc lbl">Member Revenue</div>
+        <div class="mc val" id="r-mem-act"></div>
+        <div class="mc"     id="r-mem-bud"></div>
+        <div class="mc"     id="r-mem-ly"></div>
+      </div>
+      <div class="metric-row">
+        <div class="mc lbl">F&amp;B Revenue</div>
+        <div class="mc val" id="r-fb-act"></div>
+        <div class="mc"     id="r-fb-bud"></div>
+        <div class="mc"     id="r-fb-ly"></div>
+      </div>
+      <div class="metric-row">
+        <div class="mc lbl">F&amp;B COGs %</div>
+        <div class="mc val" id="r-cogs-act"></div>
+        <div class="mc"     id="r-cogs-bud"></div>
+        <div class="mc neu" style="color:#9ca3af;font-size:0.82rem;">N/A</div>
+      </div>
+      <div class="metric-row">
+        <div class="mc lbl">Payroll %</div>
+        <div class="mc val" id="r-pay-act"></div>
+        <div class="mc"     id="r-pay-bud"></div>
+        <div class="mc"     id="r-pay-ly"></div>
+      </div>
+      <div class="metric-row">
+        <div class="mc lbl">Dept GOP</div>
+        <div class="mc val" id="r-gop-act"></div>
+        <div class="mc"     id="r-gop-bud"></div>
+        <div class="mc"     id="r-gop-ly"></div>
+      </div>
+    </div>
+
+    <div class="narrative">
+      <h3>Narrative Summary</h3>
+      <p id="narrative-text"></p>
+    </div>
+
+    <div class="raw-section">
+      <button class="raw-toggle" id="rawToggle">Show extracted values &#9660;</button>
+      <div id="raw-data"></div>
+    </div>
+
+    <button class="reset-btn" id="resetBtn">Upload another file</button>
+  </div>
+
+</div>
+
+<script>
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+  'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+const fileInput = document.getElementById('fileInput');
+const dropZone  = document.getElementById('dropZone');
+const statusEl  = document.getElementById('status');
+const reportEl  = document.getElementById('report');
+const rawDataEl = document.getElementById('raw-data');
+const rawToggle = document.getElementById('rawToggle');
+const resetBtn  = document.getElementById('resetBtn');
+
+dropZone.addEventListener('dragover',  e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+dropZone.addEventListener('dragleave', ()  => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop',      e  => {
+  e.preventDefault(); dropZone.classList.remove('drag-over');
+  if (e.dataTransfer.files[0]) processFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change', () => { if (fileInput.files[0]) processFile(fileInput.files[0]); });
+rawToggle.addEventListener('click', () => {
+  const open = rawDataEl.style.display === 'block';
+  rawDataEl.style.display = open ? 'none' : 'block';
+  rawToggle.textContent   = open ? 'Show extracted values ▼' : 'Hide extracted values ▲';
+});
+resetBtn.addEventListener('click', () => {
+  reportEl.style.display = 'none';
+  dropZone.style.display = '';
+  statusEl.textContent = '';
+  statusEl.className = '';
+  fileInput.value = '';
+});
+
+async function processFile(file) {
+  if (!file.name.toLowerCase().endsWith('.pdf')) {
+    return setStatus('Please upload a PDF file.', 'error');
+  }
+  setStatus('Reading PDF…');
+  try {
+    const buf = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+
+    let allItems = [];
+    for (let p = 1; p <= pdf.numPages; p++) {
+      const page = await pdf.getPage(p);
+      const tc   = await page.getTextContent({ normalizeWhitespace: false });
+      allItems   = allItems.concat(tc.items);
+    }
+
+    const textLines = buildTextLines(allItems);
+    const extracted = extractValues(textLines);
+    renderReport(extracted, file.name);
+    showRawData(textLines, extracted);
+
+    dropZone.style.display = 'none';
+    reportEl.style.display = 'block';
+    setStatus(extracted.ok
+      ? 'Report generated successfully.'
+      : 'Report generated — some values may be missing (see extracted values panel).',
+      extracted.ok ? 'success' : 'error');
+  } catch (err) {
+    setStatus('Error reading PDF: ' + err.message, 'error');
+    console.error(err);
+  }
+}
+
+function buildTextLines(items) {
+  const buckets = {};
+  for (const item of items) {
+    if (!item.str) continue;
+    const y = Math.round(item.transform[5] / 3) * 3;
+    if (!buckets[y]) buckets[y] = [];
+    buckets[y].push({ x: item.transform[4], text: item.str, width: item.width || 0 });
+  }
+
+  const sortedY = Object.keys(buckets).map(Number).sort((a, b) => b - a);
+  const rows = sortedY.map(y => buckets[y].sort((a, b) => a.x - b.x));
+
+  let wSum = 0, cSum = 0;
+  for (const row of rows) {
+    for (const it of row) {
+      const t = it.text.trim();
+      if (t.length > 0 && it.width > 0) { wSum += it.width; cSum += t.length; }
+    }
+  }
+  const charW = cSum > 0 ? wSum / cSum : 6.0;
+
+  return rows.map(row => {
+    if (!row.length) return '';
+    const baseX = row[0].x;
+    let str = '';
+    for (const it of row) {
+      const col = Math.max(0, Math.round((it.x - baseX) / charW));
+      while (str.length < col) str += ' ';
+      str += it.text;
+    }
+    return str;
+  });
+}
+
+function getToken(lines, lineNum, colNum) {
+  const line = lines[lineNum - 1];
+  if (!line) return null;
+  const idx = colNum - 1;
+  if (idx >= line.length) return null;
+  let start = idx;
+  while (start > 0 && isNumCh(line[start - 1])) start--;
+  let end = idx;
+  while (end < line.length - 1 && isNumCh(line[end + 1])) end++;
+  const tok = line.slice(start, end + 1).replace(/\s/g, '');
+  return tok || null;
+}
+
+function isNumCh(c) { return /[\d,.()-]/.test(c); }
+
+function parseNum(raw) {
+  if (!raw) return null;
+  const s   = String(raw).replace(/[$,%\s]/g, '');
+  const neg = s.startsWith('(') && s.endsWith(')');
+  const n   = parseFloat(s.replace(/[()]/g, '').replace(/,/g, ''));
+  return isNaN(n) ? null : (neg ? -n : n);
+}
+
+function extractValues(lines) {
+  const raw = {
+    memberAct:     getToken(lines, 5,  1),
+    memberBudget:  getToken(lines, 5,  17),
+    memberLY:      getToken(lines, 5,  49),
+    fbAct1:        getToken(lines, 7,  1),
+    fbAct2:        getToken(lines, 8,  1),
+    fbBud1:        getToken(lines, 7,  16),
+    fbBud2:        getToken(lines, 8,  18),
+    fbLY1:         getToken(lines, 7,  46),
+    fbLY2:         getToken(lines, 8,  40),
+    cogsAct:       getToken(lines, 12, 9),
+    cogsBudget:    getToken(lines, 12, 24),
+    payrollAct:    getToken(lines, 29, 9),
+    payrollBudget: getToken(lines, 29, 25),
+    payrollLY:     getToken(lines, 29, 55),
+    gopDollar:     getToken(lines, 46, 1),
+    gopPctAct:     getToken(lines, 46, 9),
+    gopPctBud:     getToken(lines, 46, 24),
+    gopPctLY:      getToken(lines, 46, 54),
+  };
+
+  const v = {};
+  v.memberAct     = parseNum(raw.memberAct);
+  v.memberBudget  = parseNum(raw.memberBudget);
+  v.memberLY      = parseNum(raw.memberLY);
+  v.fbAct = (parseNum(raw.fbAct1) || 0) + (parseNum(raw.fbAct2) || 0);
+  v.fbBud = (parseNum(raw.fbBud1) || 0) + (parseNum(raw.fbBud2) || 0);
+  v.fbLY  = (parseNum(raw.fbLY1)  || 0) + (parseNum(raw.fbLY2)  || 0);
+  v.cogsAct       = parseNum(raw.cogsAct);
+  v.cogsBudget    = parseNum(raw.cogsBudget);
+  v.payrollAct    = parseNum(raw.payrollAct);
+  v.payrollBudget = parseNum(raw.payrollBudget);
+  v.payrollLY     = parseNum(raw.payrollLY);
+  v.gopDollar     = parseNum(raw.gopDollar);
+  v.gopPctAct     = parseNum(raw.gopPctAct);
+  v.gopPctBud     = parseNum(raw.gopPctBud);
+  v.gopPctLY      = parseNum(raw.gopPctLY);
+
+  v.memberVsBud  = pct(v.memberAct, v.memberBudget);
+  v.memberVsLY   = pct(v.memberAct, v.memberLY);
+  v.fbVsBud      = pct(v.fbAct, v.fbBud);
+  v.fbVsLY       = pct(v.fbAct, v.fbLY);
+  v.cogsVsBud    = pts(v.cogsAct, v.cogsBudget);
+  v.payrollVsBud = pts(v.payrollAct, v.payrollBudget);
+  v.payrollVsLY  = pts(v.payrollAct, v.payrollLY);
+  v.gopVsBud     = pts(v.gopPctAct, v.gopPctBud);
+  v.gopVsLY      = pts(v.gopPctAct, v.gopPctLY);
+
+  const ok = Object.values(v).every(x => x !== null && !isNaN(x));
+  return { ...v, raw, ok };
+}
+
+function pct(a, b) { return (a !== null && b !== null && b !== 0) ? (a - b) / b * 100 : null; }
+function pts(a, b) { return (a !== null && b !== null) ? a - b : null; }
+
+function fmtK(n) {
+  if (n === null || isNaN(n)) return '—';
+  return Math.abs(n) >= 1000 ? '$' + (n / 1000).toFixed(1) + 'K' : '$' + n.toFixed(0);
+}
+function fmtPct(n) { return (n !== null && !isNaN(n)) ? n.toFixed(2) + '%' : '—'; }
+
+function badge(n, isPts) {
+  if (n === null || isNaN(n)) return '<span class="badge neu">—</span>';
+  const sign  = n >= 0 ? '+' : '';
+  const cls   = n >= 0 ? 'pos' : 'neg';
+  const arrow = n >= 0 ? '▲' : '▼';
+  const label = isPts ? sign + n.toFixed(2) + ' pts' : sign + n.toFixed(1) + '%';
+  return '<span class="badge ' + cls + '">' + arrow + ' ' + label + '</span>';
+}
+
+function set(id, html) { const el = document.getElementById(id); if (el) el.innerHTML = html; }
+
+function renderReport(v, filename) {
+  document.getElementById('rpt-subtitle').textContent =
+    'Source: ' + filename + '  ·  Generated ' +
+    new Date().toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' });
+
+  set('r-mem-act',  fmtK(v.memberAct));
+  set('r-mem-bud',  badge(v.memberVsBud, false));
+  set('r-mem-ly',   badge(v.memberVsLY,  false));
+  set('r-fb-act',   fmtK(v.fbAct));
+  set('r-fb-bud',   badge(v.fbVsBud,  false));
+  set('r-fb-ly',    badge(v.fbVsLY,   false));
+  set('r-cogs-act', fmtPct(v.cogsAct));
+  set('r-cogs-bud', badge(v.cogsVsBud, true));
+  set('r-pay-act',  fmtPct(v.payrollAct));
+  set('r-pay-bud',  badge(v.payrollVsBud, true));
+  set('r-pay-ly',   badge(v.payrollVsLY,  true));
+
+  const gopLabel = v.gopDollar !== null
+    ? fmtK(v.gopDollar) + ' <span style="font-weight:400;font-size:0.82rem;color:#555">(' + fmtPct(v.gopPctAct) + ' margin)</span>'
+    : '—';
+  set('r-gop-act',  gopLabel);
+  set('r-gop-bud',  badge(v.gopVsBud, true));
+  set('r-gop-ly',   badge(v.gopVsLY,  true));
+
+  set('narrative-text', buildNarrative(v));
+}
+
+function buildNarrative(v) {
+  const parts = [];
+  if (v.memberAct !== null) {
+    const b  = v.memberVsBud !== null ? (v.memberVsBud >= 0 ? '+' : '') + v.memberVsBud.toFixed(1) + '% vs Budget' : '';
+    const ly = v.memberVsLY  !== null ? (v.memberVsLY  >= 0 ? '+' : '') + v.memberVsLY.toFixed(1)  + '% vs LY'     : '';
+    parts.push('Member Revenue of ' + fmtK(v.memberAct) + ' was ' + [b, ly].filter(Boolean).join(' and ') + '.');
+  }
+  if (v.fbAct !== null) {
+    const b  = v.fbVsBud !== null ? (v.fbVsBud >= 0 ? '+' : '') + v.fbVsBud.toFixed(1) + '% vs Budget' : '';
+    const ly = v.fbVsLY  !== null ? (v.fbVsLY  >= 0 ? '+' : '') + v.fbVsLY.toFixed(1)  + '% vs LY'     : '';
+    parts.push('F&amp;B Revenue of ' + fmtK(v.fbAct) + ' was ' + [b, ly].filter(Boolean).join(' and ') + '.');
+  }
+  if (v.cogsAct !== null && v.cogsVsBud !== null) {
+    const dir = v.cogsVsBud > 0 ? 'above' : 'below';
+    parts.push('F&amp;B COGs at ' + fmtPct(v.cogsAct) + ' were ' + Math.abs(v.cogsVsBud).toFixed(2) + ' pts ' + dir + ' Budget (' + fmtPct(v.cogsBudget) + ').');
+  }
+  if (v.payrollAct !== null) {
+    const b  = v.payrollVsBud !== null ? Math.abs(v.payrollVsBud).toFixed(2) + ' pts ' + (v.payrollVsBud > 0 ? 'above' : 'below') + ' Budget' : '';
+    const ly = v.payrollVsLY  !== null ? Math.abs(v.payrollVsLY).toFixed(2)  + ' pts ' + (v.payrollVsLY  > 0 ? 'above' : 'below') + ' LY'     : '';
+    parts.push('Payroll at ' + fmtPct(v.payrollAct) + ' was ' + [b, ly].filter(Boolean).join(' and ') + '.');
+  }
+  if (v.gopDollar !== null) {
+    const b  = v.gopVsBud !== null ? Math.abs(v.gopVsBud).toFixed(2) + ' pts ' + (v.gopVsBud > 0 ? 'above' : 'below') + ' Budget' : '';
+    const ly = v.gopVsLY  !== null ? Math.abs(v.gopVsLY).toFixed(2)  + ' pts ' + (v.gopVsLY  > 0 ? 'above' : 'below') + ' LY'     : '';
+    parts.push('Dept GOP of ' + fmtK(v.gopDollar) + ' (' + fmtPct(v.gopPctAct) + ' margin) was ' + [b, ly].filter(Boolean).join(' and ') + '.');
+  }
+  return parts.join('&nbsp; ');
+}
+
+function showRawData(lines, v) {
+  const spec = [
+    ['Member Act   (ln5  col1)',  v.raw.memberAct],
+    ['Member Bud   (ln5  col17)', v.raw.memberBudget],
+    ['Member LY    (ln5  col49)', v.raw.memberLY],
+    ['FB Act1      (ln7  col1)',  v.raw.fbAct1],
+    ['FB Act2      (ln8  col1)',  v.raw.fbAct2],
+    ['FB Bud1      (ln7  col16)', v.raw.fbBud1],
+    ['FB Bud2      (ln8  col18)', v.raw.fbBud2],
+    ['FB LY1       (ln7  col46)', v.raw.fbLY1],
+    ['FB LY2       (ln8  col40)', v.raw.fbLY2],
+    ['COGs Act     (ln12 col9)',  v.raw.cogsAct],
+    ['COGs Bud     (ln12 col24)', v.raw.cogsBudget],
+    ['Payroll Act  (ln29 col9)',  v.raw.payrollAct],
+    ['Payroll Bud  (ln29 col25)', v.raw.payrollBudget],
+    ['Payroll LY   (ln29 col55)', v.raw.payrollLY],
+    ['GOP $        (ln46 col1)',  v.raw.gopDollar],
+    ['GOP % Act    (ln46 col9)',  v.raw.gopPctAct],
+    ['GOP % Bud    (ln46 col24)', v.raw.gopPctBud],
+    ['GOP % LY     (ln46 col54)', v.raw.gopPctLY],
+  ];
+
+  let out = '=== Extracted cell values ===\n\n';
+  for (const [lbl, val] of spec)
+    out += lbl.padEnd(30) + (val != null ? val : '⚠ NOT FOUND') + '\n';
+
+  out += '\n\n=== Reconstructed text lines (first 55) ===\n';
+  for (let i = 0; i < Math.min(lines.length, 55); i++)
+    out += 'ln' + String(i + 1).padStart(2) + ': ' + lines[i] + '\n';
+
+  rawDataEl.textContent = out;
+}
+
+function setStatus(msg, cls) { statusEl.textContent = msg; statusEl.className = cls || ''; }
+</script>
+</body>
+</html>
