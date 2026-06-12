@@ -243,17 +243,15 @@ async function generateAI() {
   regenBtn.style.display = 'none';
   copyAiBtn.style.display = 'none';
 
-  const prompt = buildAIPrompt(lastPL, lastXL);
-
   try {
     const response = await fetch('/api/commentary', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: 'claude-haiku-4-5-20251001',
-        max_tokens: 1200,
+        max_tokens: 300,
         stream: true,
-        messages: [{ role: 'user', content: prompt }]
+        messages: [{ role: 'user', content: buildAIPrompt(lastPL, lastXL) }]
       })
     });
 
@@ -262,29 +260,25 @@ async function generateAI() {
       throw new Error((err.error && err.error.message) || 'API error ' + response.status);
     }
 
+    // Accumulate full response, then assemble commentary in JS
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
-    let fullText = '';
-    aiText.textContent = '';
-
+    let raw = '';
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      const chunk = decoder.decode(value);
-      for (const line of chunk.split('\n')) {
+      for (const line of decoder.decode(value).split('\n')) {
         if (!line.startsWith('data: ')) continue;
-        const data = line.slice(6).trim();
-        if (data === '[DONE]') continue;
+        const d = line.slice(6).trim();
+        if (d === '[DONE]') continue;
         try {
-          const ev = JSON.parse(data);
-          if (ev.type === 'content_block_delta' && ev.delta && ev.delta.text) {
-            fullText += ev.delta.text;
-            aiText.textContent = fullText;
-          }
+          const ev = JSON.parse(d);
+          if (ev.type === 'content_block_delta' && ev.delta && ev.delta.text) raw += ev.delta.text;
         } catch (_) {}
       }
     }
 
+    aiText.textContent = assembleCommentary(lastPL, lastXL, parsePhrases(raw));
     regenBtn.style.display = '';
     copyAiBtn.style.display = '';
   } catch (err) {
@@ -292,6 +286,60 @@ async function generateAI() {
     regenBtn.style.display = '';
     console.error(err);
   }
+}
+
+// Parse key: value lines from AI response
+function parsePhrases(text) {
+  const out = {};
+  for (const line of text.split('\n')) {
+    const m = line.match(/^([A-Z_]+):\s*(.+)$/);
+    if (m) out[m[1]] = m[2].trim().replace(/^["']|["']$/g, '');
+  }
+  return out;
+}
+
+// Assemble commentary from locked template + AI phrases
+function assembleCommentary(pl, xl, p) {
+  const fbOnly   = pl.fbOnlyAct    !== null ? fmtK(pl.fbOnlyAct)    : null;
+  const otherAmt = pl.otherAct     !== null ? fmtK(pl.otherAct)     : null;
+  const otherVLY = pl.otherVsLY    !== null ? fmtPctAbs(pl.otherVsLY) : null;
+  const otherDir = pl.otherVsLY    !== null && pl.otherVsLY >= 0 ? 'higher' : 'lower';
+  const cogs     = pl.cogsAct      !== null ? fmtPct(pl.cogsAct)    : null;
+  const cogs$    = pl.cogsDollar   !== null ? fmtK(pl.cogsDollar)   : null;
+  const pay$     = pl.payrollDollar!== null ? fmtK(pl.payrollDollar): null;
+  const pay      = pl.payrollAct   !== null ? fmtPct(pl.payrollAct) : null;
+  const payDir   = pl.payrollVsBud !== null && pl.payrollVsBud >= 0 ? ['Higher','increased'] : ['Lower','decreased'];
+  const bld      = xl && xl.buildingSpend !== null ? fmtMoney(xl.buildingSpend) : null;
+  const bldN     = xl && xl.foundVenues   ? xl.foundVenues.length : 0;
+
+  const lines = ['Key Drivers:'];
+
+  if (fbOnly)
+    lines.push('• F&B revenue resulted at ' + fbOnly + (p.FB_CONTEXT ? ' ' + p.FB_CONTEXT : '') + ', supported by ' + (p.FB_INITIATIVE || 'the team\'s operational focus') + '.');
+
+  if (otherAmt)
+    lines.push('• Other revenue resulted at ' + otherAmt + ', contributing positively to overall revenue uplift, which is also ' + otherDir + ' than last year by ' + (otherVLY || '') + ' due to ' + (p.OTHER_REASON || 'higher use of room hire and AV system') + '.');
+
+  if (bld)
+    lines.push('• Building venue contribution spend across ' + bldN + ' restaurant and bar venues totalled ' + bld + '.');
+
+  if (cogs)
+    lines.push('• F&B COGS was reported at ' + cogs + (cogs$ ? ' (' + cogs$ + ')' : '') + ' due to ' + (p.COGS_REASON || 'cost saving measures') + '.');
+
+  lines.push('');
+  lines.push('Payroll related expenses:');
+
+  if (pay$ && pay)
+    lines.push(payDir[0] + ' service wage costs ' + payDir[1] + ' to ' + pay$ + ' (' + pay + ') due to ' + (p.PAYROLL_REASON || 'staffing requirements during the period') + '.');
+
+  lines.push('');
+  lines.push('Next Steps:');
+  lines.push('• Continue driving F&B revenue through upselling initiatives, with a focus on premium beverages, wine sales, and member catering opportunities.');
+  lines.push('• Review rostering following the onboarding period of new team members to ensure labour costs return to target levels. Focus on aligning staffing levels with forecasted business demand and reducing reliance on management coverage where possible.');
+  lines.push('• Increase member engagement through targeted events, wine dinners, tastings, and club activations to drive both attendance and spend within the Club.');
+  lines.push('• Maintain current cost-control measures that resulted in favourable F&B COGS performance while ensuring service standards and product quality remain high.');
+
+  return lines.join('\n');
 }
 
 function copyAI() {
@@ -303,60 +351,24 @@ function copyAI() {
   });
 }
 
-// ── AI prompt builder ──────────────────────────────────────────────────────
+// ── AI prompt — asks for 5 short fill-in phrases only ─────────────────────
 function buildAIPrompt(pl, xl) {
-  // F&B only (excl Other)
-  const fbOnly   = pl.fbOnlyAct  !== null ? fmtK(pl.fbOnlyAct)       : null;
-  const fbVB     = pl.fbVsBud    !== null ? fmtPctVar(pl.fbVsBud)     : null;
-  const fbVLY    = pl.fbVsLY     !== null ? fmtPctVar(pl.fbVsLY)      : null;
-  // Other revenue
-  const other    = pl.otherAct   !== null ? fmtK(pl.otherAct)         : null;
-  const otherVLY = pl.otherVsLY  !== null ? fmtPctVar(pl.otherVsLY)   : null;
-  // COGS
-  const cogs$    = pl.cogsDollar !== null ? fmtK(pl.cogsDollar)       : null;
-  const cogs     = pl.cogsAct    !== null ? fmtPct(pl.cogsAct)        : null;
-  const cogsV    = pl.cogsVsBud  !== null ? fmtPtsVar(pl.cogsVsBud)   : null;
-  // Payroll
-  const pay$     = pl.payrollDollar !== null ? fmtK(pl.payrollDollar) : null;
-  const pay      = pl.payrollAct    !== null ? fmtPct(pl.payrollAct)  : null;
-  const payVB    = pl.payrollVsBud  !== null ? fmtPtsVar(pl.payrollVsBud) : null;
-  const payVLY   = pl.payrollVsLY   !== null ? fmtPtsVar(pl.payrollVsLY)  : null;
-  // Excel
-  const bld      = xl && xl.buildingSpend !== null ? fmtMoney(xl.buildingSpend) : null;
-  const bldVenues= xl && xl.foundVenues   ? xl.foundVenues.length : 0;
-
   const dataBlock = [
-    fbOnly  ? 'F&B Revenue (food & beverage only): ' + fbOnly + (fbVB ? ' (' + fbVB + ' vs Budget, ' + fbVLY + ' vs LY)' : '') : null,
-    other   ? 'Other Revenue (room hire / AV): ' + other + (otherVLY ? ' (' + otherVLY + ' vs Last Year)' : '') : null,
-    cogs    ? 'F&B COGS: ' + cogs + (cogs$ ? ' (' + cogs$ + ')' : '') + (cogsV ? ', ' + cogsV + ' vs Budget' : '') : null,
-    pay     ? 'Payroll: ' + pay + (pay$ ? ' (' + pay$ + ')' : '') + (payVB ? ', ' + payVB + ' vs Budget, ' + payVLY + ' vs LY' : '') : null,
-    bld     ? 'Building venue contribution spend (' + bldVenues + ' restaurant/bar venues): ' + bld : null,
+    pl.fbOnlyAct  !== null ? 'F&B Revenue: ' + fmtK(pl.fbOnlyAct) + ' (' + fmtPctVar(pl.fbVsBud) + ' vs Budget, ' + fmtPctVar(pl.fbVsLY) + ' vs LY)' : null,
+    pl.otherAct   !== null ? 'Other Revenue: ' + fmtK(pl.otherAct) + ' (' + fmtPctVar(pl.otherVsLY) + ' vs Last Year)' : null,
+    pl.cogsAct    !== null ? 'F&B COGS: ' + fmtPct(pl.cogsAct) + ' (' + fmtPtsVar(pl.cogsVsBud) + ' vs Budget)' : null,
+    pl.payrollAct !== null ? 'Payroll: ' + fmtPct(pl.payrollAct) + ' / ' + (pl.payrollDollar !== null ? fmtK(pl.payrollDollar) : '') + ' (' + fmtPtsVar(pl.payrollVsBud) + ' vs Budget, ' + fmtPtsVar(pl.payrollVsLY) + ' vs LY)' : null,
+    xl && xl.buildingSpend !== null ? 'Building venue spend: ' + fmtMoney(xl.buildingSpend) : null,
   ].filter(Boolean).join('\n');
 
-  return 'You are writing a monthly P&L commentary for a private members club.\n'
-    + 'Here is an example showing the EXACT style, structure, and tone required. Study it carefully.\n\n'
-    + '=== EXAMPLE ===\n'
-    + 'Key Drivers:\n'
-    + '• F&B revenue resulted at $26.7K despite lower club activity, supported by the team\'s focus on upselling.\n'
-    + '• Other revenue resulted at $4.7K, contributing positively to overall revenue uplift, which is also higher than last year by 54% due to higher use of room hire and PA / AV system use.\n'
-    + '• F&B COGS was reported at 5.81% ($7.8K) due to cost saving measures.\n'
-    + '\n'
-    + 'Payroll related expenses:\n'
-    + 'Higher service wage costs increased to $99K (73.29%) due to 2 new team members continuing training needs, as well as higher allocations to F&B and Public area than budgeted and last year.\n'
-    + '\n'
-    + 'Next Steps:\n'
-    + '• Continue driving F&B revenue through upselling initiatives, with a focus on premium beverages, wine sales, and member catering opportunities.\n'
-    + '• Review rostering following the onboarding period of new team members to ensure labour costs return to target levels. Focus on aligning staffing levels with forecasted business demand and reducing reliance on management coverage where possible.\n'
-    + '• Increase member engagement through targeted events, wine dinners, tastings, and club activations to drive both attendance and spend within the Club.\n'
-    + '• Maintain current cost-control measures that resulted in favourable F&B COGS performance while ensuring service standards and product quality remain high.\n'
-    + '=== END EXAMPLE ===\n\n'
-    + 'Now write the commentary for this month. Use the same three-section structure (Key Drivers / Payroll related expenses / Next Steps). '
-    + 'Match the sentence length and plain factual tone of the example exactly. '
-    + 'Copy the Next Steps bullets word-for-word from the example. '
-    + 'Plain text only — no markdown, no asterisks, no hash symbols. Use • for bullet points. '
-    + 'Write complete sentences using the figures from the data. Do not leave any placeholder or bracketed text.\n\n'
-    + 'THIS MONTH\'S DATA:\n'
-    + dataBlock;
+  return 'You are helping write a monthly P&L commentary for a private members club.\n'
+    + 'Based on the data below, output ONLY these 5 labeled phrases. Each is a short fragment (not a full sentence). No other text.\n\n'
+    + 'FB_CONTEXT: [5-8 words of context — e.g. "despite lower club activity" or "driven by strong member dining demand"]\n'
+    + 'FB_INITIATIVE: [5-8 words on what the team did — e.g. "the team\'s focus on upselling" or "strong member engagement programs"]\n'
+    + 'OTHER_REASON: [8-12 words explaining Other revenue vs last year — e.g. "higher use of room hire and PA/AV system use"]\n'
+    + 'COGS_REASON: [4-8 words for why COGS was at this level — e.g. "cost saving measures" or "effective procurement and portion controls"]\n'
+    + 'PAYROLL_REASON: [10-20 words explaining the payroll result — e.g. "2 new team members continuing training needs, as well as higher allocations to F&B and Public area than budgeted and last year"]\n\n'
+    + 'DATA:\n' + dataBlock;
 }
 
 // ── PDF text extraction ────────────────────────────────────────────────────
@@ -498,6 +510,11 @@ function fmtPctVar(n) {
   if (n === null || isNaN(n)) return '—';
   const t = Math.abs(n) >= 1 ? trunc1(n) : trunc2(n);
   return (n >= 0 ? '+' : '') + t.toFixed(Math.abs(n) >= 1 ? 1 : 2) + '%';
+}
+function fmtPctAbs(n) {
+  if (n === null || isNaN(n)) return '—';
+  const a = Math.abs(n);
+  return (a >= 1 ? trunc1(a) : trunc2(a)).toFixed(a >= 1 ? 1 : 2) + '%';
 }
 function fmtPtsVar(n) {
   if (n === null || isNaN(n)) return '—';
