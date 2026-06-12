@@ -305,23 +305,41 @@ function copyAI() {
 
 // ── AI prompt builder ──────────────────────────────────────────────────────
 function buildAIPrompt(pl, xl) {
-  const fb    = pl.fbAct    !== null ? fmtK(pl.fbAct)           : 'N/A';
-  const fbVB  = pl.fbVsBud  !== null ? fmtPctVar(pl.fbVsBud)    : 'N/A';
-  const fbVLY = pl.fbVsLY   !== null ? fmtPctVar(pl.fbVsLY)     : 'N/A';
-  const cogs  = pl.cogsAct  !== null ? fmtPct(pl.cogsAct)       : 'N/A';
-  const cogsV = pl.cogsVsBud!== null ? fmtPtsVar(pl.cogsVsBud)  : 'N/A';
-  const pay   = pl.payrollAct   !== null ? fmtPct(pl.payrollAct)      : 'N/A';
-  const payVB = pl.payrollVsBud !== null ? fmtPtsVar(pl.payrollVsBud) : 'N/A';
-  const payVLY= pl.payrollVsLY  !== null ? fmtPtsVar(pl.payrollVsLY)  : 'N/A';
-  const bld   = xl && xl.buildingSpend !== null ? fmtMoney(xl.buildingSpend) : null;
+  // F&B only (excl Other)
+  const fbOnly   = pl.fbOnlyAct  !== null ? fmtK(pl.fbOnlyAct)       : null;
+  const fbVB     = pl.fbVsBud    !== null ? fmtPctVar(pl.fbVsBud)     : null;
+  const fbVLY    = pl.fbVsLY     !== null ? fmtPctVar(pl.fbVsLY)      : null;
+  // Other revenue
+  const other    = pl.otherAct   !== null ? fmtK(pl.otherAct)         : null;
+  const otherVLY = pl.otherVsLY  !== null ? fmtPctVar(pl.otherVsLY)   : null;
+  // COGS
+  const cogs$    = pl.cogsDollar !== null ? fmtK(pl.cogsDollar)       : null;
+  const cogs     = pl.cogsAct    !== null ? fmtPct(pl.cogsAct)        : null;
+  const cogsV    = pl.cogsVsBud  !== null ? fmtPtsVar(pl.cogsVsBud)   : null;
+  // Payroll
+  const pay$     = pl.payrollDollar !== null ? fmtK(pl.payrollDollar) : null;
+  const pay      = pl.payrollAct    !== null ? fmtPct(pl.payrollAct)  : null;
+  const payVB    = pl.payrollVsBud  !== null ? fmtPtsVar(pl.payrollVsBud) : null;
+  const payVLY   = pl.payrollVsLY   !== null ? fmtPtsVar(pl.payrollVsLY)  : null;
+  // Excel
+  const bld      = xl && xl.buildingSpend !== null ? fmtMoney(xl.buildingSpend) : null;
+  const bldVenues= xl && xl.foundVenues   ? xl.foundVenues.length : 0;
 
-  return 'You are writing a monthly P&L commentary for a private members club. '
-    + 'Here is an example of the exact style and format required:\n\n'
-    + '=== EXAMPLE OUTPUT (do not copy — this is just to show the style) ===\n'
+  const dataBlock = [
+    fbOnly  ? 'F&B Revenue (food & beverage only): ' + fbOnly + (fbVB ? ' (' + fbVB + ' vs Budget, ' + fbVLY + ' vs LY)' : '') : null,
+    other   ? 'Other Revenue (room hire / AV): ' + other + (otherVLY ? ' (' + otherVLY + ' vs Last Year)' : '') : null,
+    cogs    ? 'F&B COGS: ' + cogs + (cogs$ ? ' (' + cogs$ + ')' : '') + (cogsV ? ', ' + cogsV + ' vs Budget' : '') : null,
+    pay     ? 'Payroll: ' + pay + (pay$ ? ' (' + pay$ + ')' : '') + (payVB ? ', ' + payVB + ' vs Budget, ' + payVLY + ' vs LY' : '') : null,
+    bld     ? 'Building venue contribution spend (' + bldVenues + ' restaurant/bar venues): ' + bld : null,
+  ].filter(Boolean).join('\n');
+
+  return 'You are writing a monthly P&L commentary for a private members club.\n'
+    + 'Here is an example showing the EXACT style, structure, and tone required. Study it carefully.\n\n'
+    + '=== EXAMPLE ===\n'
     + 'Key Drivers:\n'
-    + '• F&B revenue resulted at $31.5K despite lower club activity, supported by the team\'s focus on upselling.\n'
-    + '• Building venue contribution spend across restaurant and bar venues totalled $34,101.81, reflecting ongoing operational support across six venues.\n'
-    + '• F&B COGS was reported at 5.81% due to cost saving measures.\n'
+    + '• F&B revenue resulted at $26.7K despite lower club activity, supported by the team\'s focus on upselling.\n'
+    + '• Other revenue resulted at $4.7K, contributing positively to overall revenue uplift, which is also higher than last year by 54% due to higher use of room hire and PA / AV system use.\n'
+    + '• F&B COGS was reported at 5.81% ($7.8K) due to cost saving measures.\n'
     + '\n'
     + 'Payroll related expenses:\n'
     + 'Higher service wage costs increased to $99K (73.29%) due to 2 new team members continuing training needs, as well as higher allocations to F&B and Public area than budgeted and last year.\n'
@@ -332,15 +350,13 @@ function buildAIPrompt(pl, xl) {
     + '• Increase member engagement through targeted events, wine dinners, tastings, and club activations to drive both attendance and spend within the Club.\n'
     + '• Maintain current cost-control measures that resulted in favourable F&B COGS performance while ensuring service standards and product quality remain high.\n'
     + '=== END EXAMPLE ===\n\n'
-    + 'Now write the commentary for this month using the data below. Follow the same structure and sentence style as the example. '
-    + 'Rules: plain text only, no markdown, no asterisks, no hash symbols, use • for bullets. '
-    + 'Copy the Next Steps bullets exactly as shown in the example. '
-    + 'Write complete, natural sentences — do not leave any placeholder text.\n\n'
+    + 'Now write the commentary for this month. Use the same three-section structure (Key Drivers / Payroll related expenses / Next Steps). '
+    + 'Match the sentence length and plain factual tone of the example exactly. '
+    + 'Copy the Next Steps bullets word-for-word from the example. '
+    + 'Plain text only — no markdown, no asterisks, no hash symbols. Use • for bullet points. '
+    + 'Write complete sentences using the figures from the data. Do not leave any placeholder or bracketed text.\n\n'
     + 'THIS MONTH\'S DATA:\n'
-    + 'F&B Revenue: ' + fb + ' (' + fbVB + ' vs Budget, ' + fbVLY + ' vs LY)\n'
-    + 'F&B COGs: ' + cogs + ' (' + cogsV + ' vs Budget)\n'
-    + 'Payroll: ' + pay + ' (' + payVB + ' vs Budget, ' + payVLY + ' vs LY)\n'
-    + (bld ? 'Building venue contribution spend: ' + bld + '\n' : '');
+    + dataBlock;
 }
 
 // ── PDF text extraction ────────────────────────────────────────────────────
@@ -387,35 +403,42 @@ function parseNum(raw) {
 // ── P&L extraction ─────────────────────────────────────────────────────────
 function extractValues(lines) {
   const raw = {
-    memberAct:     tok(lines, 1, ['Members Club Revenue']),
-    memberBudget:  tok(lines, 3, ['Members Club Revenue']),
-    memberLY:      tok(lines, 7, ['Members Club Revenue']),
-    fbAct1:        tok(lines, 1, ['Food', 'Beverage Revenue']),
-    fbBud1:        tok(lines, 3, ['Food', 'Beverage Revenue']),
-    fbLY1:         tok(lines, 7, ['Food', 'Beverage Revenue']),
-    fbAct2:        tok(lines, 1, ['Other', 'Revenue', 'Room Rental']),
-    fbBud2:        tok(lines, 3, ['Other', 'Revenue', 'Room Rental']),
-    fbLY2:         tok(lines, 7, ['Other', 'Revenue', 'Room Rental']),
-    cogsAct:       tok(lines, 2, ['Total COS']),
-    cogsBudget:    tok(lines, 4, ['Total COS']),
-    payrollAct:    tok(lines, 2, ['Total Payroll & Related']),
-    payrollBudget: tok(lines, 4, ['Total Payroll & Related']),
-    payrollLY:     tok(lines, 8, ['Total Payroll & Related']),
-    gopDollar:     tok(lines, 1, ['Departmental Profit']),
-    gopPctAct:     tok(lines, 2, ['Departmental Profit']),
-    gopPctBud:     tok(lines, 4, ['Departmental Profit']),
-    gopPctLY:      tok(lines, 8, ['Departmental Profit']),
+    memberAct:      tok(lines, 1, ['Members Club Revenue']),
+    memberBudget:   tok(lines, 3, ['Members Club Revenue']),
+    memberLY:       tok(lines, 7, ['Members Club Revenue']),
+    fbAct1:         tok(lines, 1, ['Food', 'Beverage Revenue']),
+    fbBud1:         tok(lines, 3, ['Food', 'Beverage Revenue']),
+    fbLY1:          tok(lines, 7, ['Food', 'Beverage Revenue']),
+    fbAct2:         tok(lines, 1, ['Other', 'Revenue', 'Room Rental']),
+    fbBud2:         tok(lines, 3, ['Other', 'Revenue', 'Room Rental']),
+    fbLY2:          tok(lines, 7, ['Other', 'Revenue', 'Room Rental']),
+    cogsDollar:     tok(lines, 1, ['Total COS']),
+    cogsAct:        tok(lines, 2, ['Total COS']),
+    cogsBudget:     tok(lines, 4, ['Total COS']),
+    payrollDollar:  tok(lines, 1, ['Total Payroll & Related']),
+    payrollAct:     tok(lines, 2, ['Total Payroll & Related']),
+    payrollBudget:  tok(lines, 4, ['Total Payroll & Related']),
+    payrollLY:      tok(lines, 8, ['Total Payroll & Related']),
+    gopDollar:      tok(lines, 1, ['Departmental Profit']),
+    gopPctAct:      tok(lines, 2, ['Departmental Profit']),
+    gopPctBud:      tok(lines, 4, ['Departmental Profit']),
+    gopPctLY:       tok(lines, 8, ['Departmental Profit']),
   };
   const v = {};
   v.memberAct = parseNum(raw.memberAct); v.memberBudget = parseNum(raw.memberBudget); v.memberLY = parseNum(raw.memberLY);
-  v.fbAct = (parseNum(raw.fbAct1)||0) + (parseNum(raw.fbAct2)||0);
-  v.fbBud = (parseNum(raw.fbBud1)||0) + (parseNum(raw.fbBud2)||0);
-  v.fbLY  = (parseNum(raw.fbLY1) ||0) + (parseNum(raw.fbLY2) ||0);
+  v.fbOnlyAct = parseNum(raw.fbAct1); v.fbOnlyBud = parseNum(raw.fbBud1); v.fbOnlyLY = parseNum(raw.fbLY1);
+  v.otherAct  = parseNum(raw.fbAct2); v.otherBud  = parseNum(raw.fbBud2); v.otherLY   = parseNum(raw.fbLY2);
+  v.fbAct = (v.fbOnlyAct||0) + (v.otherAct||0);
+  v.fbBud = (v.fbOnlyBud||0) + (v.otherBud||0);
+  v.fbLY  = (v.fbOnlyLY ||0) + (v.otherLY ||0);
+  v.cogsDollar = parseNum(raw.cogsDollar);
   v.cogsAct = parseNum(raw.cogsAct); v.cogsBudget = parseNum(raw.cogsBudget);
+  v.payrollDollar = parseNum(raw.payrollDollar);
   v.payrollAct = parseNum(raw.payrollAct); v.payrollBudget = parseNum(raw.payrollBudget); v.payrollLY = parseNum(raw.payrollLY);
   v.gopDollar = parseNum(raw.gopDollar); v.gopPctAct = parseNum(raw.gopPctAct); v.gopPctBud = parseNum(raw.gopPctBud); v.gopPctLY = parseNum(raw.gopPctLY);
   v.memberVsBud = pct(v.memberAct, v.memberBudget); v.memberVsLY = pct(v.memberAct, v.memberLY);
   v.fbVsBud = pct(v.fbAct, v.fbBud); v.fbVsLY = pct(v.fbAct, v.fbLY);
+  v.otherVsLY = pct(v.otherAct, v.otherLY);
   v.cogsVsBud = pts(v.cogsAct, v.cogsBudget);
   v.payrollVsBud = pts(v.payrollAct, v.payrollBudget); v.payrollVsLY = pts(v.payrollAct, v.payrollLY);
   v.gopVsBud = pts(v.gopPctAct, v.gopPctBud); v.gopVsLY = pts(v.gopPctAct, v.gopPctLY);
