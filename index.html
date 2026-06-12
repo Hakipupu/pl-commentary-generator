@@ -9,22 +9,9 @@
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f2f5; color: #222; min-height: 100vh; }
-    header { background: #1a3a5c; color: #fff; padding: 18px 32px; display: flex; justify-content: space-between; align-items: center; }
+    header { background: #1a3a5c; color: #fff; padding: 18px 32px; }
     header h1 { font-size: 1.4rem; font-weight: 600; }
     header p  { font-size: 0.85rem; opacity: 0.7; margin-top: 3px; }
-    .settings-btn { background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); color: #fff; border-radius: 7px; padding: 6px 14px; font-size: 0.82rem; cursor: pointer; white-space: nowrap; flex-shrink: 0; }
-    .settings-btn:hover { background: rgba(255,255,255,0.25); }
-    .api-panel { background: #fff; border-radius: 10px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); padding: 20px 22px; margin-bottom: 24px; display: none; }
-    .api-panel h3 { font-size: 0.9rem; font-weight: 700; color: #1a3a5c; margin-bottom: 10px; }
-    .api-panel p  { font-size: 0.82rem; color: #666; margin-bottom: 12px; line-height: 1.5; }
-    .api-row { display: flex; gap: 10px; }
-    .api-row input { flex: 1; border: 1px solid #d1d5db; border-radius: 7px; padding: 8px 12px; font-size: 0.88rem; font-family: monospace; }
-    .api-row input:focus { outline: 2px solid #2563eb; border-color: transparent; }
-    .api-save { background: #1a3a5c; color: #fff; border: none; border-radius: 7px; padding: 8px 18px; font-size: 0.85rem; cursor: pointer; }
-    .api-save:hover { background: #2a527d; }
-    .api-status { font-size: 0.8rem; margin-top: 8px; color: #15803d; min-height: 18px; }
-    .no-key-msg { padding: 16px 22px; font-size: 0.88rem; color: #888; font-style: italic; }
-    .no-key-msg a { color: #2563eb; cursor: pointer; text-decoration: underline; }
     .container { max-width: 900px; margin: 40px auto; padding: 0 16px; }
 
     .upload-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
@@ -95,21 +82,9 @@
   <div>
     <h1>P&amp;L Commentary Generator</h1>
     <p>Upload the P&amp;L PDF and Billable Items Excel to generate the commentary</p>
-  </div>
-  <button class="settings-btn" onclick="toggleApiPanel()">&#9881; AI Settings</button>
 </header>
 
 <div class="container">
-
-  <div class="api-panel" id="apiPanel">
-    <h3>Anthropic API Key</h3>
-    <p>Your key is stored only in this browser (localStorage) and sent directly to Anthropic — never to any other server.<br>Get a key at <strong>console.anthropic.com</strong> → API Keys.</p>
-    <div class="api-row">
-      <input type="password" id="apiKeyInput" placeholder="sk-ant-..." autocomplete="off" />
-      <button class="api-save" onclick="saveApiKey()">Save</button>
-    </div>
-    <div class="api-status" id="apiKeyStatus"></div>
-  </div>
 
   <div class="upload-row">
     <div class="upload-card" id="dropZonePdf">
@@ -174,26 +149,6 @@ pdfjsLib.GlobalWorkerOptions.workerSrc =
 // ── State ──────────────────────────────────────────────────────────────────
 let pdfFile = null, xlsFile = null;
 let lastPL = null, lastXL = null;
-
-// ── API key helpers ────────────────────────────────────────────────────────
-function getApiKey() { return localStorage.getItem('anthropic_api_key') || ''; }
-
-function toggleApiPanel() {
-  const p = document.getElementById('apiPanel');
-  p.style.display = p.style.display === 'block' ? 'none' : 'block';
-  if (p.style.display === 'block') {
-    const k = getApiKey();
-    document.getElementById('apiKeyInput').value = k ? k.slice(0, 12) + '…' : '';
-  }
-}
-
-function saveApiKey() {
-  const val = document.getElementById('apiKeyInput').value.trim();
-  if (!val || val.includes('…')) { document.getElementById('apiKeyStatus').textContent = 'No change.'; return; }
-  localStorage.setItem('anthropic_api_key', val);
-  document.getElementById('apiKeyStatus').textContent = '✓ Saved.';
-  document.getElementById('apiKeyInput').value = val.slice(0, 12) + '…';
-}
 
 // ── Upload wiring ──────────────────────────────────────────────────────────
 function wireZone(zoneId, inputId, extCheck, onFile) {
@@ -268,11 +223,7 @@ async function generate() {
     showRawData(textLines, pl);
     document.getElementById('report').style.display = 'block';
     setStatus(pl.ok ? 'Report generated.' : 'Report generated — some PDF values may be missing.', pl.ok ? 'success' : 'error');
-    if (getApiKey()) { generateAI(); }
-    else {
-      document.getElementById('ai-text').innerHTML =
-        '<span class="no-key-msg">Add your Anthropic API key via <a onclick="toggleApiPanel()">AI Settings</a> to generate AI commentary.</span>';
-    }
+    generateAI();
   } catch (err) {
     setStatus('Error: ' + err.message, 'error');
     console.error(err);
@@ -281,10 +232,8 @@ async function generate() {
   }
 }
 
-// ── AI commentary via Anthropic API ───────────────────────────────────────
+// ── AI commentary via /api/commentary ─────────────────────────────────────
 async function generateAI() {
-  const key = getApiKey();
-  if (!key) { toggleApiPanel(); return; }
   if (!lastPL) return;
 
   const aiText = document.getElementById('ai-text');
@@ -297,14 +246,9 @@ async function generateAI() {
   const prompt = buildAIPrompt(lastPL, lastXL);
 
   try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+    const response = await fetch('/api/commentary', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': key,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true'
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: 'claude-haiku-4-5-20251001',
         max_tokens: 800,
