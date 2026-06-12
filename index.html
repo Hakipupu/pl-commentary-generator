@@ -305,47 +305,42 @@ function copyAI() {
 
 // ── AI prompt builder ──────────────────────────────────────────────────────
 function buildAIPrompt(pl, xl) {
-  const fb    = pl.fbAct !== null ? fmtK(pl.fbAct) : null;
-  const fbVB  = pl.fbVsBud !== null ? fmtPctVar(pl.fbVsBud) : null;
-  const fbVLY = pl.fbVsLY  !== null ? fmtPctVar(pl.fbVsLY)  : null;
-  const cogs  = pl.cogsAct !== null ? fmtPct(pl.cogsAct) : null;
-  const cogsV = pl.cogsVsBud !== null ? fmtPtsVar(pl.cogsVsBud) : null;
-  const pay   = pl.payrollAct !== null ? fmtPct(pl.payrollAct) : null;
-  const payVB = pl.payrollVsBud !== null ? fmtPtsVar(pl.payrollVsBud) : null;
-  const payVLY= pl.payrollVsLY  !== null ? fmtPtsVar(pl.payrollVsLY)  : null;
-  const valet = xl && xl.valetParking !== null ? fmtMoney(xl.valetParking) : null;
-  const treas = xl && xl.treasury !== null ? fmtMoney(xl.treasury) : null;
+  const fb    = pl.fbAct    !== null ? fmtK(pl.fbAct)           : 'N/A';
+  const fbVB  = pl.fbVsBud  !== null ? fmtPctVar(pl.fbVsBud)    : 'N/A';
+  const fbVLY = pl.fbVsLY   !== null ? fmtPctVar(pl.fbVsLY)     : 'N/A';
+  const cogs  = pl.cogsAct  !== null ? fmtPct(pl.cogsAct)       : 'N/A';
+  const cogsV = pl.cogsVsBud!== null ? fmtPtsVar(pl.cogsVsBud)  : 'N/A';
+  const pay   = pl.payrollAct   !== null ? fmtPct(pl.payrollAct)      : 'N/A';
+  const payVB = pl.payrollVsBud !== null ? fmtPtsVar(pl.payrollVsBud) : 'N/A';
+  const payVLY= pl.payrollVsLY  !== null ? fmtPtsVar(pl.payrollVsLY)  : 'N/A';
   const bld   = xl && xl.buildingSpend !== null ? fmtMoney(xl.buildingSpend) : null;
 
-  const dataLines = [];
-  if (fb)   dataLines.push('F&B Revenue: ' + fb + ' (' + fbVB + ' vs Budget, ' + fbVLY + ' vs LY)');
-  if (cogs) dataLines.push('F&B COGs: ' + cogs + ' (' + cogsV + ' vs Budget)');
-  if (pay)  dataLines.push('Payroll: ' + pay + ' (' + payVB + ' vs Budget, ' + payVLY + ' vs LY)');
-  if (valet) dataLines.push('COMO The Treasury Valet Parking: ' + valet);
-  if (treas) dataLines.push('COMO The Treasury billings: ' + treas);
-  if (bld)   dataLines.push('Building venue contribution spend: ' + bld);
-
-  const prompt = 'Write a monthly P&L commentary for a private members club. Output ONLY the three sections below in exactly this format. No intro, no extra text, no section titles other than the three shown.\n\n'
+  return 'You are writing a monthly P&L commentary for a private members club. '
+    + 'Here is an example of the exact style and format required:\n\n'
+    + '=== EXAMPLE OUTPUT (do not copy — this is just to show the style) ===\n'
     + 'Key Drivers:\n'
-    + '• F&B revenue resulted at ' + (fb || '[F&B amount]') + ' [vs budget/LY context in 5 words max], supported by [one brief operational reason e.g. team upselling focus].\n'
-    + (bld ? '• Building venue contribution spend across restaurant and bar venues totalled ' + bld + ', [one sentence on what this reflects].\n' : '')
-    + '• F&B COGS was reported at ' + (cogs || '[COGS %]') + ' due to [one brief reason e.g. cost saving measures].\n'
+    + '• F&B revenue resulted at $31.5K despite lower club activity, supported by the team\'s focus on upselling.\n'
+    + '• Building venue contribution spend across restaurant and bar venues totalled $34,101.81, reflecting ongoing operational support across six venues.\n'
+    + '• F&B COGS was reported at 5.81% due to cost saving measures.\n'
     + '\n'
     + 'Payroll related expenses:\n'
-    + '[2 sentences only. Sentence 1: state payroll came in at ' + (pay || '[%]') + ', ' + (payVB || '[X]') + ' above budget and ' + (payVLY || '[X]') + ' above last year. Sentence 2: give the specific operational reason — new team members, training needs, allocation shifts between departments.]\n'
+    + 'Higher service wage costs increased to $99K (73.29%) due to 2 new team members continuing training needs, as well as higher allocations to F&B and Public area than budgeted and last year.\n'
     + '\n'
     + 'Next Steps:\n'
     + '• Continue driving F&B revenue through upselling initiatives, with a focus on premium beverages, wine sales, and member catering opportunities.\n'
     + '• Review rostering following the onboarding period of new team members to ensure labour costs return to target levels. Focus on aligning staffing levels with forecasted business demand and reducing reliance on management coverage where possible.\n'
     + '• Increase member engagement through targeted events, wine dinners, tastings, and club activations to drive both attendance and spend within the Club.\n'
     + '• Maintain current cost-control measures that resulted in favourable F&B COGS performance while ensuring service standards and product quality remain high.\n'
-    + '\n'
-    + 'RULES: Plain text only. No markdown. No asterisks. No hash symbols. Use • for bullets. Copy the Next Steps bullets exactly as written above — do not change them. Fill in [bracketed] placeholders using the data. Be concise — no flowery language.\n'
-    + '\n'
-    + 'DATA:\n'
-    + dataLines.join('\n');
-
-  return prompt;
+    + '=== END EXAMPLE ===\n\n'
+    + 'Now write the commentary for this month using the data below. Follow the same structure and sentence style as the example. '
+    + 'Rules: plain text only, no markdown, no asterisks, no hash symbols, use • for bullets. '
+    + 'Copy the Next Steps bullets exactly as shown in the example. '
+    + 'Write complete, natural sentences — do not leave any placeholder text.\n\n'
+    + 'THIS MONTH\'S DATA:\n'
+    + 'F&B Revenue: ' + fb + ' (' + fbVB + ' vs Budget, ' + fbVLY + ' vs LY)\n'
+    + 'F&B COGs: ' + cogs + ' (' + cogsV + ' vs Budget)\n'
+    + 'Payroll: ' + pay + ' (' + payVB + ' vs Budget, ' + payVLY + ' vs LY)\n'
+    + (bld ? 'Building venue contribution spend: ' + bld + '\n' : '');
 }
 
 // ── PDF text extraction ────────────────────────────────────────────────────
