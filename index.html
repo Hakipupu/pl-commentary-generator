@@ -9,9 +9,22 @@
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f2f5; color: #222; min-height: 100vh; }
-    header { background: #1a3a5c; color: #fff; padding: 18px 32px; }
+    header { background: #1a3a5c; color: #fff; padding: 18px 32px; display: flex; justify-content: space-between; align-items: center; }
     header h1 { font-size: 1.4rem; font-weight: 600; }
     header p  { font-size: 0.85rem; opacity: 0.7; margin-top: 3px; }
+    .settings-btn { background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); color: #fff; border-radius: 7px; padding: 6px 14px; font-size: 0.82rem; cursor: pointer; white-space: nowrap; flex-shrink: 0; }
+    .settings-btn:hover { background: rgba(255,255,255,0.25); }
+    .api-panel { background: #fff; border-radius: 10px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); padding: 20px 22px; margin-bottom: 24px; display: none; }
+    .api-panel h3 { font-size: 0.9rem; font-weight: 700; color: #1a3a5c; margin-bottom: 10px; }
+    .api-panel p  { font-size: 0.82rem; color: #666; margin-bottom: 12px; line-height: 1.5; }
+    .api-row { display: flex; gap: 10px; }
+    .api-row input { flex: 1; border: 1px solid #d1d5db; border-radius: 7px; padding: 8px 12px; font-size: 0.88rem; font-family: monospace; }
+    .api-row input:focus { outline: 2px solid #2563eb; border-color: transparent; }
+    .api-save { background: #1a3a5c; color: #fff; border: none; border-radius: 7px; padding: 8px 18px; font-size: 0.85rem; cursor: pointer; }
+    .api-save:hover { background: #2a527d; }
+    .api-status { font-size: 0.8rem; margin-top: 8px; color: #15803d; min-height: 18px; }
+    .no-key-msg { padding: 16px 22px; font-size: 0.88rem; color: #888; font-style: italic; }
+    .no-key-msg a { color: #2563eb; cursor: pointer; text-decoration: underline; }
     .container { max-width: 900px; margin: 40px auto; padding: 0 16px; }
 
     .upload-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
@@ -79,11 +92,24 @@
 <body>
 
 <header>
-  <h1>P&amp;L Commentary Generator</h1>
-  <p>Upload the P&amp;L PDF and Billable Items Excel to generate the commentary</p>
+  <div>
+    <h1>P&amp;L Commentary Generator</h1>
+    <p>Upload the P&amp;L PDF and Billable Items Excel to generate the commentary</p>
+  </div>
+  <button class="settings-btn" onclick="toggleApiPanel()">&#9881; AI Settings</button>
 </header>
 
 <div class="container">
+
+  <div class="api-panel" id="apiPanel">
+    <h3>Anthropic API Key</h3>
+    <p>Your key is stored only in this browser (localStorage) and sent directly to Anthropic — never to any other server.<br>Get a key at <strong>console.anthropic.com</strong> → API Keys.</p>
+    <div class="api-row">
+      <input type="password" id="apiKeyInput" placeholder="sk-ant-..." autocomplete="off" />
+      <button class="api-save" onclick="saveApiKey()">Save</button>
+    </div>
+    <div class="api-status" id="apiKeyStatus"></div>
+  </div>
 
   <div class="upload-row">
     <div class="upload-card" id="dropZonePdf">
@@ -148,6 +174,26 @@ pdfjsLib.GlobalWorkerOptions.workerSrc =
 // ── State ──────────────────────────────────────────────────────────────────
 let pdfFile = null, xlsFile = null;
 let lastPL = null, lastXL = null;
+
+// ── API key helpers ────────────────────────────────────────────────────────
+function getApiKey() { return localStorage.getItem('anthropic_api_key') || ''; }
+
+function toggleApiPanel() {
+  const p = document.getElementById('apiPanel');
+  p.style.display = p.style.display === 'block' ? 'none' : 'block';
+  if (p.style.display === 'block') {
+    const k = getApiKey();
+    document.getElementById('apiKeyInput').value = k ? k.slice(0, 12) + '…' : '';
+  }
+}
+
+function saveApiKey() {
+  const val = document.getElementById('apiKeyInput').value.trim();
+  if (!val || val.includes('…')) { document.getElementById('apiKeyStatus').textContent = 'No change.'; return; }
+  localStorage.setItem('anthropic_api_key', val);
+  document.getElementById('apiKeyStatus').textContent = '✓ Saved.';
+  document.getElementById('apiKeyInput').value = val.slice(0, 12) + '…';
+}
 
 // ── Upload wiring ──────────────────────────────────────────────────────────
 function wireZone(zoneId, inputId, extCheck, onFile) {
@@ -222,7 +268,11 @@ async function generate() {
     showRawData(textLines, pl);
     document.getElementById('report').style.display = 'block';
     setStatus(pl.ok ? 'Report generated.' : 'Report generated — some PDF values may be missing.', pl.ok ? 'success' : 'error');
-    generateAI();
+    if (getApiKey()) { generateAI(); }
+    else {
+      document.getElementById('ai-text').innerHTML =
+        '<span class="no-key-msg">Add your Anthropic API key via <a onclick="toggleApiPanel()">AI Settings</a> to generate AI commentary.</span>';
+    }
   } catch (err) {
     setStatus('Error: ' + err.message, 'error');
     console.error(err);
@@ -231,8 +281,10 @@ async function generate() {
   }
 }
 
-// ── AI commentary via /api/commentary ─────────────────────────────────────
+// ── AI commentary via Anthropic API ───────────────────────────────────────
 async function generateAI() {
+  const key = getApiKey();
+  if (!key) { toggleApiPanel(); return; }
   if (!lastPL) return;
 
   const aiText = document.getElementById('ai-text');
@@ -245,9 +297,14 @@ async function generateAI() {
   const prompt = buildAIPrompt(lastPL, lastXL);
 
   try {
-    const response = await fetch('/api/commentary', {
+    const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': key,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
       body: JSON.stringify({
         model: 'claude-haiku-4-5-20251001',
         max_tokens: 800,
@@ -304,35 +361,50 @@ function copyAI() {
 
 // ── AI prompt builder ──────────────────────────────────────────────────────
 function buildAIPrompt(pl, xl) {
-  const lines = ['You are writing a concise management commentary for a monthly P&L report for a private members club department.',
-    'Based on the figures below, write a clear and professional summary (4-6 short paragraphs) that:',
-    '- Explains what the key numbers show',
-    '- Gives likely reasons for variances vs Budget and Last Year',
-    '- Highlights any concerns or positives',
-    '- Ends with 2-3 brief "Next Steps" dot points',
-    'Write in plain text, no markdown formatting, no asterisks or hashes. Use plain dot points (•) if needed.',
-    '',
-    '--- P&L DATA ---'];
-
+  const data = [];
   if (pl.memberAct !== null)
-    lines.push('Member Revenue: ' + fmtK(pl.memberAct) + ' (' + fmtPctVar(pl.memberVsBud) + ' vs Budget, ' + fmtPctVar(pl.memberVsLY) + ' vs LY)');
+    data.push('Member Revenue: ' + fmtK(pl.memberAct) + ' (' + fmtPctVar(pl.memberVsBud) + ' vs Budget, ' + fmtPctVar(pl.memberVsLY) + ' vs LY)');
   if (pl.fbAct !== null)
-    lines.push('F&B Revenue: ' + fmtK(pl.fbAct) + ' (' + fmtPctVar(pl.fbVsBud) + ' vs Budget, ' + fmtPctVar(pl.fbVsLY) + ' vs LY)');
+    data.push('F&B Revenue: ' + fmtK(pl.fbAct) + ' (' + fmtPctVar(pl.fbVsBud) + ' vs Budget, ' + fmtPctVar(pl.fbVsLY) + ' vs LY)');
   if (pl.cogsAct !== null)
-    lines.push('F&B COGs: ' + fmtPct(pl.cogsAct) + ' (' + fmtPtsVar(pl.cogsVsBud) + ' vs Budget)');
+    data.push('F&B COGs: ' + fmtPct(pl.cogsAct) + ' (' + fmtPtsVar(pl.cogsVsBud) + ' vs Budget)');
   if (pl.payrollAct !== null)
-    lines.push('Payroll %: ' + fmtPct(pl.payrollAct) + ' (' + fmtPtsVar(pl.payrollVsBud) + ' vs Budget, ' + fmtPtsVar(pl.payrollVsLY) + ' vs LY)');
+    data.push('Payroll: ' + fmtPct(pl.payrollAct) + ' (' + fmtPtsVar(pl.payrollVsBud) + ' vs Budget, ' + fmtPtsVar(pl.payrollVsLY) + ' vs LY)');
   if (pl.gopDollar !== null)
-    lines.push('Dept GOP: ' + fmtK(pl.gopDollar) + ' (' + fmtPct(pl.gopPctAct) + ' margin, ' + fmtPtsVar(pl.gopVsBud) + ' vs Budget, ' + fmtPtsVar(pl.gopVsLY) + ' vs LY)');
-
+    data.push('Dept GOP: ' + fmtK(pl.gopDollar) + ' (' + fmtPct(pl.gopPctAct) + ' margin, ' + fmtPtsVar(pl.gopVsBud) + ' vs Budget, ' + fmtPtsVar(pl.gopVsLY) + ' vs LY)');
   if (xl) {
-    lines.push('');
-    if (xl.valetParking !== null) lines.push('COMO The Treasury Valet Parking billings: ' + fmtMoney(xl.valetParking));
-    if (xl.treasury !== null)     lines.push('COMO The Treasury billings: ' + fmtMoney(xl.treasury));
-    if (xl.buildingSpend !== null) lines.push('Building venue contribution spend (' + xl.foundVenues.join(', ') + '): ' + fmtMoney(xl.buildingSpend));
+    if (xl.valetParking !== null) data.push('COMO The Treasury Valet Parking billings: ' + fmtMoney(xl.valetParking));
+    if (xl.treasury !== null)     data.push('COMO The Treasury billings: ' + fmtMoney(xl.treasury));
+    if (xl.buildingSpend !== null) data.push('Building venue contribution spend (' + xl.foundVenues.join(', ') + '): ' + fmtMoney(xl.buildingSpend));
   }
 
-  return lines.join('\n');
+  return `You are writing a monthly P&L commentary for a private members club department. Use the figures below to write the commentary in EXACTLY this structure and style:
+
+--- REQUIRED OUTPUT FORMAT ---
+
+Key Drivers:
+• [F&B revenue bullet — state the dollar result, context for why it landed where it did, and any team initiatives that helped]
+• [Other revenue bullet — state dollar result, % vs LY, and reason for variance e.g. room hire, AV use]
+• [F&B COGS bullet — state the % and dollar amount, note cost-saving measures or controls]
+
+Payroll related expenses:
+[One paragraph. State the dollar amount and % result. Explain the reason for the variance vs budget and LY — e.g. new team members, training, allocation shifts. Be specific where data allows.]
+
+Next Steps:
+• [Action on F&B revenue — upselling, premium beverages, member catering, events]
+• [Action on rostering/labour — review schedules post-onboarding, align staffing to forecasted demand]
+• [Action on member engagement — events, wine dinners, tastings, club activations]
+• [Action on cost controls — maintain COGS performance while protecting service standards]
+
+--- RULES ---
+- Write in plain text only. No markdown, no asterisks, no hash symbols.
+- Use • for bullet points.
+- Embed the actual dollar and percentage figures from the data into the commentary naturally.
+- Do not add any sections beyond those listed above.
+- Keep each bullet to 1-2 sentences. The payroll paragraph should be 2-3 sentences.
+
+--- P&L DATA ---
+${data.join('\n')}`;
 }
 
 // ── PDF text extraction ────────────────────────────────────────────────────
