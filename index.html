@@ -251,7 +251,7 @@ async function generateAI() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: 'claude-haiku-4-5-20251001',
-        max_tokens: 800,
+        max_tokens: 1200,
         stream: true,
         messages: [{ role: 'user', content: prompt }]
       })
@@ -305,50 +305,47 @@ function copyAI() {
 
 // ── AI prompt builder ──────────────────────────────────────────────────────
 function buildAIPrompt(pl, xl) {
-  const data = [];
-  if (pl.memberAct !== null)
-    data.push('Member Revenue: ' + fmtK(pl.memberAct) + ' (' + fmtPctVar(pl.memberVsBud) + ' vs Budget, ' + fmtPctVar(pl.memberVsLY) + ' vs LY)');
-  if (pl.fbAct !== null)
-    data.push('F&B Revenue: ' + fmtK(pl.fbAct) + ' (' + fmtPctVar(pl.fbVsBud) + ' vs Budget, ' + fmtPctVar(pl.fbVsLY) + ' vs LY)');
-  if (pl.cogsAct !== null)
-    data.push('F&B COGs: ' + fmtPct(pl.cogsAct) + ' (' + fmtPtsVar(pl.cogsVsBud) + ' vs Budget)');
-  if (pl.payrollAct !== null)
-    data.push('Payroll: ' + fmtPct(pl.payrollAct) + ' (' + fmtPtsVar(pl.payrollVsBud) + ' vs Budget, ' + fmtPtsVar(pl.payrollVsLY) + ' vs LY)');
-  if (pl.gopDollar !== null)
-    data.push('Dept GOP: ' + fmtK(pl.gopDollar) + ' (' + fmtPct(pl.gopPctAct) + ' margin, ' + fmtPtsVar(pl.gopVsBud) + ' vs Budget, ' + fmtPtsVar(pl.gopVsLY) + ' vs LY)');
-  if (xl) {
-    if (xl.valetParking !== null) data.push('COMO The Treasury Valet Parking billings: ' + fmtMoney(xl.valetParking));
-    if (xl.treasury !== null)     data.push('COMO The Treasury billings: ' + fmtMoney(xl.treasury));
-    if (xl.buildingSpend !== null) data.push('Building venue contribution spend (' + xl.foundVenues.join(', ') + '): ' + fmtMoney(xl.buildingSpend));
-  }
+  const fb    = pl.fbAct !== null ? fmtK(pl.fbAct) : null;
+  const fbVB  = pl.fbVsBud !== null ? fmtPctVar(pl.fbVsBud) : null;
+  const fbVLY = pl.fbVsLY  !== null ? fmtPctVar(pl.fbVsLY)  : null;
+  const cogs  = pl.cogsAct !== null ? fmtPct(pl.cogsAct) : null;
+  const cogsV = pl.cogsVsBud !== null ? fmtPtsVar(pl.cogsVsBud) : null;
+  const pay   = pl.payrollAct !== null ? fmtPct(pl.payrollAct) : null;
+  const payVB = pl.payrollVsBud !== null ? fmtPtsVar(pl.payrollVsBud) : null;
+  const payVLY= pl.payrollVsLY  !== null ? fmtPtsVar(pl.payrollVsLY)  : null;
+  const valet = xl && xl.valetParking !== null ? fmtMoney(xl.valetParking) : null;
+  const treas = xl && xl.treasury !== null ? fmtMoney(xl.treasury) : null;
+  const bld   = xl && xl.buildingSpend !== null ? fmtMoney(xl.buildingSpend) : null;
 
-  return `You are writing a monthly P&L commentary for a private members club department. Use the figures below to write the commentary in EXACTLY this structure and style:
+  const dataLines = [];
+  if (fb)   dataLines.push('F&B Revenue: ' + fb + ' (' + fbVB + ' vs Budget, ' + fbVLY + ' vs LY)');
+  if (cogs) dataLines.push('F&B COGs: ' + cogs + ' (' + cogsV + ' vs Budget)');
+  if (pay)  dataLines.push('Payroll: ' + pay + ' (' + payVB + ' vs Budget, ' + payVLY + ' vs LY)');
+  if (valet) dataLines.push('COMO The Treasury Valet Parking: ' + valet);
+  if (treas) dataLines.push('COMO The Treasury billings: ' + treas);
+  if (bld)   dataLines.push('Building venue contribution spend: ' + bld);
 
---- REQUIRED OUTPUT FORMAT ---
+  const prompt = 'Write a monthly P&L commentary for a private members club. Output ONLY the three sections below in exactly this format. No intro, no extra text, no section titles other than the three shown.\n\n'
+    + 'Key Drivers:\n'
+    + '• F&B revenue resulted at ' + (fb || '[F&B amount]') + ' [vs budget/LY context in 5 words max], supported by [one brief operational reason e.g. team upselling focus].\n'
+    + (bld ? '• Building venue contribution spend across restaurant and bar venues totalled ' + bld + ', [one sentence on what this reflects].\n' : '')
+    + '• F&B COGS was reported at ' + (cogs || '[COGS %]') + ' due to [one brief reason e.g. cost saving measures].\n'
+    + '\n'
+    + 'Payroll related expenses:\n'
+    + '[2 sentences only. Sentence 1: state payroll came in at ' + (pay || '[%]') + ', ' + (payVB || '[X]') + ' above budget and ' + (payVLY || '[X]') + ' above last year. Sentence 2: give the specific operational reason — new team members, training needs, allocation shifts between departments.]\n'
+    + '\n'
+    + 'Next Steps:\n'
+    + '• Continue driving F&B revenue through upselling initiatives, with a focus on premium beverages, wine sales, and member catering opportunities.\n'
+    + '• Review rostering following the onboarding period of new team members to ensure labour costs return to target levels. Focus on aligning staffing levels with forecasted business demand and reducing reliance on management coverage where possible.\n'
+    + '• Increase member engagement through targeted events, wine dinners, tastings, and club activations to drive both attendance and spend within the Club.\n'
+    + '• Maintain current cost-control measures that resulted in favourable F&B COGS performance while ensuring service standards and product quality remain high.\n'
+    + '\n'
+    + 'RULES: Plain text only. No markdown. No asterisks. No hash symbols. Use • for bullets. Copy the Next Steps bullets exactly as written above — do not change them. Fill in [bracketed] placeholders using the data. Be concise — no flowery language.\n'
+    + '\n'
+    + 'DATA:\n'
+    + dataLines.join('\n');
 
-Key Drivers:
-• [F&B revenue bullet — state the dollar result, context for why it landed where it did, and any team initiatives that helped]
-• [Other revenue bullet — state dollar result, % vs LY, and reason for variance e.g. room hire, AV use]
-• [F&B COGS bullet — state the % and dollar amount, note cost-saving measures or controls]
-
-Payroll related expenses:
-[One paragraph. State the dollar amount and % result. Explain the reason for the variance vs budget and LY — e.g. new team members, training, allocation shifts. Be specific where data allows.]
-
-Next Steps:
-• [Action on F&B revenue — upselling, premium beverages, member catering, events]
-• [Action on rostering/labour — review schedules post-onboarding, align staffing to forecasted demand]
-• [Action on member engagement — events, wine dinners, tastings, club activations]
-• [Action on cost controls — maintain COGS performance while protecting service standards]
-
---- RULES ---
-- Write in plain text only. No markdown, no asterisks, no hash symbols.
-- Use • for bullet points.
-- Embed the actual dollar and percentage figures from the data into the commentary naturally.
-- Do not add any sections beyond those listed above.
-- Keep each bullet to 1-2 sentences. The payroll paragraph should be 2-3 sentences.
-
---- P&L DATA ---
-${data.join('\n')}`;
+  return prompt;
 }
 
 // ── PDF text extraction ────────────────────────────────────────────────────
